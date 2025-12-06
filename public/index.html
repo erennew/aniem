@@ -9,7 +9,38 @@
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
 </head>
 <body>
-
+    <!-- Add this admin login button in your header/nav -->
+    <button id="adminLoginBtn" class="admin-login-btn">
+        <i class="fas fa-lock"></i> Admin Login
+    </button>
+    
+    <!-- Keep the auth modal but modify it to be admin-only -->
+    <div id="authModal" class="auth-modal" style="display: none;">
+        <div class="auth-content">
+            <h2><i class="fas fa-lock"></i> Admin Login</h2>
+            <p class="auth-subtitle">Only for administrators</p>
+            
+            <div class="form-group">
+                <input type="text" id="loginUsername" placeholder="Admin Username" required>
+                <input type="password" id="loginPassword" placeholder="Admin Password" required>
+                <button onclick="adminLogin()" class="auth-btn">
+                    <i class="fas fa-sign-in-alt"></i> Login as Admin
+                </button>
+                <p id="loginError" class="error-message"></p>
+            </div>
+            
+            <button onclick="hideAuthModal()" class="auth-cancel-btn">
+                <i class="fas fa-times"></i> Cancel
+            </button>
+            
+            <div class="auth-footer">
+                <p>Regular users can vote without login!</p>
+                <button onclick="showAsGuest()" class="guest-btn">
+                    <i class="fas fa-user"></i> Continue as Guest
+                </button>
+            </div>
+        </div>
+    </div>
     <!-- Header Section -->
     <header class="header">
         <div class="header-container">
