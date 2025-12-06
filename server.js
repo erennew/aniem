@@ -4,6 +4,7 @@ const cors = require('cors');
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 const path = require('path');
+const crypto = require('crypto');
 require('dotenv').config();
 
 const app = express();
@@ -31,6 +32,7 @@ app.use(cors({
     },
     credentials: true
 }));
+
 // Serve static files from public folder
 app.use(express.static(path.join(__dirname, 'public')));
 
@@ -44,16 +46,10 @@ if (!MONGODB_URI) {
     console.log('Using in-memory data (no database) for demo');
 }
 
-// Schemas (define them inline to avoid file issues)
-const UserSchema = new mongoose.Schema({
-    username: { type: String, required: true, unique: true },
-    password: { type: String, required: true },
-    isAdmin: { type: Boolean, default: false },
-    createdAt: { type: Date, default: Date.now }
-});
-
+// Schemas
 const VoteSchema = new mongoose.Schema({
     userId: { type: String, required: true },
+    userIdentifier: { type: String, required: true }, // Browser fingerprint + IP hash
     category: { type: String, required: true },
     selection: { type: String, required: true },
     timestamp: { type: Date, default: Date.now },
@@ -61,7 +57,15 @@ const VoteSchema = new mongoose.Schema({
     userAgent: String
 });
 
-// CMS Schemas (simplified for now)
+// Admin User Schema
+const AdminSchema = new mongoose.Schema({
+    username: { type: String, required: true, unique: true },
+    password: { type: String, required: true },
+    isAdmin: { type: Boolean, default: true },
+    createdAt: { type: Date, default: Date.now }
+});
+
+// CMS Schemas
 const CategorySchema = new mongoose.Schema({
     name: String,
     description: String,
@@ -84,8 +88,8 @@ const NomineeSchema = new mongoose.Schema({
 });
 
 // Create models
-const User = mongoose.model('User', UserSchema);
 const Vote = mongoose.model('Vote', VoteSchema);
+const Admin = mongoose.model('Admin', AdminSchema);
 const Category = mongoose.model('Category', CategorySchema);
 const Nominee = mongoose.model('Nominee', NomineeSchema);
 
@@ -131,7 +135,7 @@ let demoData = {
     ],
     nominees: [],
     votes: [],
-    users: []
+    admins: []
 };
 
 // Connect to MongoDB if URI exists
@@ -158,10 +162,10 @@ if (MONGODB_URI) {
 
 async function createDefaultAdmin() {
     try {
-        const adminExists = await User.findOne({ username: 'admin' });
+        const adminExists = await Admin.findOne({ username: 'admin' });
         if (!adminExists) {
             const hashedPassword = await bcrypt.hash('admin123', 10);
-            const admin = new User({
+            const admin = new Admin({
                 username: 'admin',
                 password: hashedPassword,
                 isAdmin: true
@@ -174,8 +178,16 @@ async function createDefaultAdmin() {
     }
 }
 
-// Authentication middleware
-const authenticateToken = (req, res, next) => {
+// Helper function to generate unique user identifier (IP + User-Agent hash)
+function generateUserIdentifier(req) {
+    const ip = req.ip || req.connection.remoteAddress;
+    const userAgent = req.headers['user-agent'] || '';
+    const identifier = crypto.createHash('md5').update(ip + userAgent).digest('hex');
+    return identifier;
+}
+
+// Authentication middleware (for admin only)
+const authenticateAdmin = (req, res, next) => {
     const authHeader = req.headers['authorization'];
     const token = authHeader && authHeader.split(' ')[1];
     
@@ -187,6 +199,12 @@ const authenticateToken = (req, res, next) => {
         if (err) {
             return res.status(403).json({ error: 'Invalid or expired token' });
         }
+        
+        // Check if user is admin
+        if (!user.isAdmin) {
+            return res.status(403).json({ error: 'Admin access required' });
+        }
+        
         req.user = user;
         next();
     });
@@ -216,133 +234,77 @@ app.get('/api/health', (req, res) => {
     });
 });
 
-// ==================== AUTH ROUTES ====================
-
-// User Registration
-app.post('/api/register', async (req, res) => {
+// Get Categories (Public)
+app.get('/api/categories', async (req, res) => {
     try {
-        const { username, password } = req.body;
-        
-        if (!username || !password) {
-            return res.status(400).json({ error: 'Username and password required' });
-        }
-        
+        let categories;
         if (dbConnected) {
-            // Check if user exists
-            const existingUser = await User.findOne({ username });
-            if (existingUser) {
-                return res.status(400).json({ error: 'Username already exists' });
-            }
-            
-            // Hash password and create user
-            const hashedPassword = await bcrypt.hash(password, 10);
-            const user = new User({
-                username,
-                password: hashedPassword
-            });
-            
-            await user.save();
+            categories = await Category.find().sort('order');
         } else {
-            // Demo mode
-            const existingUser = demoData.users.find(u => u.username === username);
-            if (existingUser) {
-                return res.status(400).json({ error: 'Username already exists' });
-            }
-            
-            demoData.users.push({
-                id: 'user_' + Date.now(),
-                username,
-                password: await bcrypt.hash(password, 10),
-                isAdmin: false
-            });
+            categories = demoData.categories;
         }
         
-        res.status(201).json({ message: 'User registered successfully' });
+        res.json(categories);
     } catch (error) {
-        console.error('Registration error:', error);
-        res.status(500).json({ error: 'Registration failed' });
+        console.error('Error fetching categories:', error);
+        res.status(500).json({ error: 'Failed to fetch categories' });
     }
 });
 
-// User Login
-app.post('/api/login', async (req, res) => {
+// Get Nominees (Public)
+app.get('/api/nominees', async (req, res) => {
     try {
-        const { username, password } = req.body;
-        
-        if (!username || !password) {
-            return res.status(400).json({ error: 'Username and password required' });
-        }
-        
-        let user;
-        
+        let nominees;
         if (dbConnected) {
-            user = await User.findOne({ username });
+            nominees = await Nominee.find();
         } else {
-            // Demo mode
-            user = demoData.users.find(u => u.username === username);
+            nominees = demoData.nominees;
         }
         
-        if (!user) {
-            return res.status(401).json({ error: 'Invalid credentials' });
-        }
-        
-        // Check password
-        const validPassword = await bcrypt.compare(password, user.password || user.passwordHash);
-        if (!validPassword) {
-            return res.status(401).json({ error: 'Invalid credentials' });
-        }
-        
-        // Create token
-        const token = jwt.sign(
-            { 
-                userId: user._id || user.id, 
-                username: user.username, 
-                isAdmin: user.isAdmin || false 
-            },
-            process.env.JWT_SECRET || 'your-secret-key-change-in-production',
-            { expiresIn: '24h' }
-        );
-        
-        res.json({ 
-            token, 
-            user: { 
-                username: user.username, 
-                isAdmin: user.isAdmin || false 
-            } 
-        });
+        res.json(nominees);
     } catch (error) {
-        console.error('Login error:', error);
-        res.status(500).json({ error: 'Login failed' });
+        console.error('Error fetching nominees:', error);
+        res.status(500).json({ error: 'Failed to fetch nominees' });
     }
 });
 
-// ==================== VOTING ROUTES ====================
+// ==================== VOTING ROUTES (NO LOGIN REQUIRED) ====================
 
-// Submit Vote
-app.post('/api/vote', authenticateToken, async (req, res) => {
+// Submit Vote (No authentication required)
+app.post('/api/vote', async (req, res) => {
     try {
-        const { category, selection } = req.body;
-        const userId = req.user.userId;
+        const { category, selection, userName } = req.body;
         
         if (!category || !selection) {
             return res.status(400).json({ error: 'Category and selection required' });
         }
         
-        // Check if already voted in this category
+        // Generate unique identifier for this user
+        const userIdentifier = generateUserIdentifier(req);
+        
+        // Check if already voted in this category using userIdentifier
         let existingVote;
         if (dbConnected) {
-            existingVote = await Vote.findOne({ userId, category });
+            existingVote = await Vote.findOne({ 
+                userIdentifier, 
+                category 
+            });
         } else {
-            existingVote = demoData.votes.find(v => v.userId === userId && v.category === category);
+            existingVote = demoData.votes.find(v => 
+                v.userIdentifier === userIdentifier && v.category === category
+            );
         }
         
         if (existingVote) {
-            return res.status(400).json({ error: 'Already voted in this category' });
+            return res.status(400).json({ 
+                error: 'You have already voted in this category. Each user can only vote once per category.' 
+            });
         }
         
         // Create vote
         const voteData = {
-            userId,
+            userId: userName || `user_${Date.now()}`,
+            userIdentifier,
             category,
             selection,
             timestamp: new Date(),
@@ -353,40 +315,74 @@ app.post('/api/vote', authenticateToken, async (req, res) => {
         if (dbConnected) {
             const vote = new Vote(voteData);
             await vote.save();
+            
+            // Update nominee vote count
+            await Nominee.findOneAndUpdate(
+                { name: selection },
+                { $inc: { votes: 1 } },
+                { upsert: true }
+            );
         } else {
             demoData.votes.push({
                 id: 'vote_' + Date.now(),
                 ...voteData
             });
+            
+            // Update demo nominee votes
+            const nomineeIndex = demoData.nominees.findIndex(n => n.name === selection);
+            if (nomineeIndex !== -1) {
+                demoData.nominees[nomineeIndex].votes = (demoData.nominees[nomineeIndex].votes || 0) + 1;
+            }
         }
         
-        res.json({ message: 'Vote submitted successfully' });
+        res.json({ 
+            success: true,
+            message: 'Vote submitted successfully! Thank you for voting.' 
+        });
     } catch (error) {
         console.error('Voting error:', error);
-        res.status(500).json({ error: 'Voting failed' });
+        res.status(500).json({ error: 'Voting failed. Please try again.' });
     }
 });
 
-// Get User's Votes
-app.get('/api/my-votes', authenticateToken, async (req, res) => {
+// Check if user can vote (by IP/User-Agent)
+app.post('/api/check-vote', async (req, res) => {
     try {
-        const userId = req.user.userId;
+        const { category } = req.body;
         
-        let votes;
-        if (dbConnected) {
-            votes = await Vote.find({ userId });
-        } else {
-            votes = demoData.votes.filter(v => v.userId === userId);
+        if (!category) {
+            return res.status(400).json({ error: 'Category required' });
         }
         
-        res.json(votes);
+        const userIdentifier = generateUserIdentifier(req);
+        
+        let existingVote;
+        if (dbConnected) {
+            existingVote = await Vote.findOne({ 
+                userIdentifier, 
+                category 
+            });
+        } else {
+            existingVote = demoData.votes.find(v => 
+                v.userIdentifier === userIdentifier && v.category === category
+            );
+        }
+        
+        res.json({
+            canVote: !existingVote,
+            hasVoted: !!existingVote,
+            existingVote: existingVote ? {
+                selection: existingVote.selection,
+                timestamp: existingVote.timestamp
+            } : null
+        });
     } catch (error) {
-        console.error('Error fetching votes:', error);
-        res.status(500).json({ error: 'Failed to fetch votes' });
+        console.error('Check vote error:', error);
+        res.status(500).json({ error: 'Failed to check vote status' });
     }
 });
 
-// Get Vote Results
+// Get Vote Results (Public)
 app.get('/api/results', async (req, res) => {
     try {
         let votes;
@@ -396,12 +392,8 @@ app.get('/api/results', async (req, res) => {
             votes = demoData.votes;
         }
         
-        const categories = [
-            'Best Anime of 2025',
-            'Best Animation Studio', 
-            'Best Voice Actor of 2025',
-            'Most Anticipated Anime of 2025'
-        ];
+        // Get all unique categories from votes
+        const categories = [...new Set(votes.map(v => v.category))];
         
         const results = {};
         categories.forEach(category => {
@@ -431,6 +423,13 @@ app.post('/api/admin/login', async (req, res) => {
     try {
         const { username, password } = req.body;
         
+        if (!username || !password) {
+            return res.status(400).json({ 
+                success: false, 
+                error: 'Username and password required' 
+            });
+        }
+        
         // For demo, accept admin/admin123
         if (username === 'admin' && password === 'admin123') {
             const token = jwt.sign(
@@ -457,11 +456,34 @@ app.post('/api/admin/login', async (req, res) => {
         
         // Check database for admin
         if (dbConnected) {
-            const user = await User.findOne({ username });
-            if (user && user.isAdmin && await bcrypt.compare(password, user.password)) {
+            const user = await Admin.findOne({ username });
+            if (user && await bcrypt.compare(password, user.password)) {
                 const token = jwt.sign(
                     { 
                         userId: user._id,
+                        username: user.username,
+                        isAdmin: true
+                    },
+                    process.env.JWT_SECRET || 'your-secret-key-change-in-production',
+                    { expiresIn: '24h' }
+                );
+                
+                return res.json({ 
+                    success: true, 
+                    token,
+                    user: {
+                        username: user.username,
+                        isAdmin: true
+                    }
+                });
+            }
+        } else {
+            // Check demo data
+            const user = demoData.admins.find(a => a.username === username && a.password === password);
+            if (user) {
+                const token = jwt.sign(
+                    { 
+                        userId: user.id,
                         username: user.username,
                         isAdmin: true
                     },
@@ -494,12 +516,8 @@ app.post('/api/admin/login', async (req, res) => {
 });
 
 // Get Admin Dashboard Statistics
-app.get('/api/admin/statistics', authenticateToken, async (req, res) => {
+app.get('/api/admin/statistics', authenticateAdmin, async (req, res) => {
     try {
-        if (!req.user.isAdmin) {
-            return res.status(403).json({ error: 'Admin access required' });
-        }
-        
         let votes;
         if (dbConnected) {
             votes = await Vote.find();
@@ -508,41 +526,34 @@ app.get('/api/admin/statistics', authenticateToken, async (req, res) => {
         }
         
         const totalVotes = votes.length;
-        const uniqueVoters = [...new Set(votes.map(v => v.userId))].length;
+        const uniqueVoters = [...new Set(votes.map(v => v.userIdentifier))].length;
         
         const today = new Date();
         today.setHours(0, 0, 0, 0);
         const votesToday = votes.filter(v => new Date(v.timestamp) >= today).length;
         
-        // Mock data for demo
+        // Get actual category stats from votes
+        const categoryStats = {};
+        const categories = [...new Set(votes.map(v => v.category))];
+        
+        categories.forEach(category => {
+            const categoryVotes = votes.filter(v => v.category === category);
+            const counts = {};
+            
+            categoryVotes.forEach(vote => {
+                counts[vote.selection] = (counts[vote.selection] || 0) + 1;
+            });
+            
+            categoryStats[category] = counts;
+        });
+        
         const statistics = {
             totalVotes,
             uniqueVoters,
             votesToday,
-            voteTrend: '+12.5%',
-            averageVotes: Math.round(totalVotes / 4),
-            categoryStats: {
-                'Best Anime of 2025': {
-                    'Attack on Titan: Final Season': 456,
-                    'Jujutsu Kaisen': 389,
-                    'Demon Slayer: Mugen Train': 342,
-                    'Re:Zero Season 3': 212
-                },
-                'Best Animation Studio': {
-                    'MAPPA': 623,
-                    'Ufotable': 512,
-                    'Kyoto Animation': 433
-                },
-                'Best Voice Actor of 2025': {
-                    'Yuki Kaji': 567,
-                    'Natsuki Hanae': 489,
-                    'Jun Fukuyama': 398
-                },
-                'Most Anticipated Anime of 2025': {
-                    'Attack on Titan: The Final Battle': 845,
-                    'Chainsaw Man Season 2': 723
-                }
-            }
+            voteTrend: votesToday > 0 ? '+12.5%' : '0%',
+            averageVotes: categories.length > 0 ? Math.round(totalVotes / categories.length) : 0,
+            categoryStats
         };
         
         res.json(statistics);
@@ -552,26 +563,56 @@ app.get('/api/admin/statistics', authenticateToken, async (req, res) => {
     }
 });
 
-// Get Recent Activity
-app.get('/api/admin/activity', authenticateToken, async (req, res) => {
+// Get All Votes (Admin)
+app.get('/api/admin/votes', authenticateAdmin, async (req, res) => {
     try {
-        if (!req.user.isAdmin) {
-            return res.status(403).json({ error: 'Admin access required' });
+        let votes;
+        if (dbConnected) {
+            votes = await Vote.find().sort({ timestamp: -1 });
+        } else {
+            votes = demoData.votes.sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
         }
         
-        // Mock activity data
-        const activities = [
-            { time: '2 minutes ago', user: 'anime_lover_42', category: 'Best Anime', vote: 'Attack on Titan', ip: '192.168.1.1', status: 'success' },
-            { time: '5 minutes ago', user: 'weeb_king', category: 'Best Studio', vote: 'MAPPA', ip: '10.0.0.5', status: 'success' },
-            { time: '12 minutes ago', user: 'otaku_girl', category: 'Best Actor', vote: 'Yuki Kaji', ip: '172.16.0.8', status: 'success' },
-            { time: '25 minutes ago', user: 'demo_user', category: 'Most Anticipated', vote: 'Chainsaw Man', ip: '203.0.113.42', status: 'success' }
-        ];
+        res.json({
+            votes,
+            total: votes.length,
+            page: 1,
+            totalPages: 1
+        });
+    } catch (error) {
+        console.error('Error fetching votes:', error);
+        res.status(500).json({ error: 'Failed to fetch votes' });
+    }
+});
+
+// Get Recent Activity
+app.get('/api/admin/activity', authenticateAdmin, async (req, res) => {
+    try {
+        let recentVotes;
+        if (dbConnected) {
+            recentVotes = await Vote.find()
+                .sort({ timestamp: -1 })
+                .limit(20);
+        } else {
+            recentVotes = demoData.votes
+                .sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp))
+                .slice(0, 20);
+        }
+        
+        const activities = recentVotes.map(vote => ({
+            time: formatTimeAgo(vote.timestamp),
+            user: vote.userId,
+            category: vote.category,
+            vote: vote.selection,
+            ip: vote.ipAddress || 'N/A',
+            status: 'success'
+        }));
         
         res.json({
             activities,
-            total: 42,
+            total: recentVotes.length,
             page: 1,
-            totalPages: 5
+            totalPages: 1
         });
     } catch (error) {
         console.error('Activity error:', error);
@@ -579,15 +620,33 @@ app.get('/api/admin/activity', authenticateToken, async (req, res) => {
     }
 });
 
+// Helper function to format time ago
+function formatTimeAgo(date) {
+    const seconds = Math.floor((new Date() - new Date(date)) / 1000);
+    
+    let interval = Math.floor(seconds / 31536000);
+    if (interval >= 1) return interval + " years ago";
+    
+    interval = Math.floor(seconds / 2592000);
+    if (interval >= 1) return interval + " months ago";
+    
+    interval = Math.floor(seconds / 86400);
+    if (interval >= 1) return interval + " days ago";
+    
+    interval = Math.floor(seconds / 3600);
+    if (interval >= 1) return interval + " hours ago";
+    
+    interval = Math.floor(seconds / 60);
+    if (interval >= 1) return interval + " minutes ago";
+    
+    return Math.floor(seconds) + " seconds ago";
+}
+
 // ==================== CMS ROUTES ====================
 
 // Get CMS Data
-app.get('/api/cms/data', authenticateToken, async (req, res) => {
+app.get('/api/cms/data', authenticateAdmin, async (req, res) => {
     try {
-        if (!req.user.isAdmin) {
-            return res.status(403).json({ error: 'Admin access required' });
-        }
-        
         let categories, nominees;
         
         if (dbConnected) {
@@ -628,12 +687,8 @@ app.get('/api/cms/data', authenticateToken, async (req, res) => {
 });
 
 // Save Category
-app.post('/api/cms/category', authenticateToken, async (req, res) => {
+app.post('/api/cms/category', authenticateAdmin, async (req, res) => {
     try {
-        if (!req.user.isAdmin) {
-            return res.status(403).json({ error: 'Admin access required' });
-        }
-        
         const categoryData = req.body;
         
         if (dbConnected) {
@@ -662,12 +717,8 @@ app.post('/api/cms/category', authenticateToken, async (req, res) => {
 });
 
 // Save Nominee
-app.post('/api/cms/nominee', authenticateToken, async (req, res) => {
+app.post('/api/cms/nominee', authenticateAdmin, async (req, res) => {
     try {
-        if (!req.user.isAdmin) {
-            return res.status(403).json({ error: 'Admin access required' });
-        }
-        
         const nomineeData = req.body;
         
         if (dbConnected) {
@@ -684,6 +735,7 @@ app.post('/api/cms/nominee', authenticateToken, async (req, res) => {
                 }
             } else {
                 nomineeData._id = 'nom_' + Date.now();
+                nomineeData.votes = nomineeData.votes || 0;
                 demoData.nominees.push(nomineeData);
             }
         }
@@ -719,6 +771,8 @@ if (require.main === module) {
     app.listen(PORT, () => {
         console.log(`Server running on port ${PORT}`);
         console.log(`Database: ${dbConnected ? 'MongoDB' : 'Demo mode'}`);
+        console.log(`Voting system ready! No login required for voting.`);
+        console.log(`Admin login: admin/admin123`);
     });
 }
 
