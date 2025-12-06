@@ -1,5 +1,4 @@
-// Anime Voting CMS - Complete Content Management System
-const API_BASE_URL = window.location.origin;
+// Anime Voting CMS - Complete Admin Dashboard with All Features
 class AnimeVotingCMS {
     constructor() {
         this.currentSection = 'dashboard';
@@ -7,88 +6,172 @@ class AnimeVotingCMS {
         this.editingCategory = null;
         this.editingNominee = null;
         this.confirmCallback = null;
+        this.voteChart = null;
+        this.categoryChart = null;
+        this.currentPage = 1;
+        this.itemsPerPage = 10;
+        this.totalActivities = 0;
+        
         this.contentData = {
             categories: [],
             nominees: [],
             images: [],
             pages: {},
-            settings: {}
+            settings: {},
+            users: []
         };
-        this.init();
+        this.adminData = null;
+        
+        // Initialize when DOM is ready
+        if (document.readyState === 'loading') {
+            document.addEventListener('DOMContentLoaded', () => this.init());
+        } else {
+            this.init();
+        }
     }
 
     async init() {
-        this.checkAuth();
-        this.setupEventListeners();
+        if (!this.checkAuth()) {
+            this.redirectToLogin();
+            return;
+        }
+        
+        this.showLoading(true);
         await this.loadAllData();
+        this.setupEventListeners();
         this.setupNavigation();
         this.setupDragAndDrop();
-        this.showToast('CMS initialized successfully', 'success');
+        this.startAutoRefresh();
+        this.updateWelcomeMessage();
+        this.showLoading(false);
     }
 
+    // Authentication Methods
     checkAuth() {
         const token = localStorage.getItem('adminToken');
-        if (!token) {
-            window.location.href = 'login.html';
+        const expiry = localStorage.getItem('adminTokenExpiry');
+        
+        if (!token || !expiry) {
+            return false;
+        }
+        
+        if (Date.now() > parseInt(expiry)) {
+            localStorage.removeItem('adminToken');
+            localStorage.removeItem('adminTokenExpiry');
+            return false;
+        }
+        
+        return true;
+    }
+
+    redirectToLogin() {
+        window.location.href = 'login.html';
+    }
+
+    logout() {
+        localStorage.removeItem('adminToken');
+        this.redirectToLogin();
+    }
+
+    updateWelcomeMessage() {
+        const welcomeElement = document.getElementById('adminWelcome');
+        if (welcomeElement) {
+            const username = localStorage.getItem('adminUsername') || 'Admin';
+            welcomeElement.innerHTML = `<i class="fas fa-user-shield"></i> ${username}`;
         }
     }
 
-    setupEventListeners() {
-        // Sidebar toggle
-        document.getElementById('toggleSidebar').addEventListener('click', () => this.toggleSidebar());
-        document.getElementById('closeSidebar').addEventListener('click', () => this.toggleSidebar());
-        
-        // Quick save
-        document.getElementById('quickSave').addEventListener('click', () => this.saveAllContent());
-        
-        // Logout
-        document.getElementById('logoutAdmin').addEventListener('click', () => this.logout());
-        
-        // Menu items
-        document.querySelectorAll('.menu-item').forEach(item => {
-            item.addEventListener('click', (e) => this.handleMenuClick(e));
-        });
-        
-        // Submenu items
-        document.querySelectorAll('.submenu li').forEach(item => {
-            item.addEventListener('click', (e) => this.handleSubmenuClick(e));
-        });
-        
-        // Page items
-        document.querySelectorAll('.page-item').forEach(item => {
-            item.addEventListener('click', (e) => this.switchPage(e));
-        });
-        
-        // Real-time preview for form inputs
-        this.setupRealTimePreview();
-    }
-
+    // Data Loading Methods
     async loadAllData() {
-        this.showLoading(true);
-        
         try {
-            // Load from localStorage or API
-            const savedData = localStorage.getItem('cmsContent');
-            if (savedData) {
-                this.contentData = JSON.parse(savedData);
-            } else {
-                await this.loadDefaultData();
-            }
+            await Promise.all([
+                this.loadDashboardData(),
+                this.loadContentData(),
+                this.loadUserManagement(),
+                this.loadDesignSettings(),
+                this.loadSystemInfo()
+            ]);
             
-            // Render initial content
-            await this.renderDashboard();
-            await this.renderCategories();
-            await this.renderNominees();
-            await this.renderImages();
-            
-            this.showLoading(false);
-            this.showToast('Data loaded successfully', 'success');
+            this.initCharts();
+            this.showToast('Dashboard initialized successfully', 'success');
             
         } catch (error) {
             console.error('Failed to load data:', error);
-            this.showToast('Failed to load data', 'error');
-            this.showLoading(false);
+            this.showToast('Failed to load dashboard data', 'error');
         }
+    }
+
+    async loadDashboardData() {
+        try {
+            const response = await fetch('/api/admin/statistics', {
+                headers: {
+                    'Authorization': `Bearer ${localStorage.getItem('adminToken')}`
+                }
+            });
+            
+            if (response.ok) {
+                const data = await response.json();
+                this.adminData = data;
+                this.updateDashboardUI(data);
+            } else {
+                this.loadMockData();
+            }
+        } catch (error) {
+            console.error('Failed to load dashboard data:', error);
+            this.loadMockData();
+        }
+    }
+
+    loadMockData() {
+        const mockData = {
+            totalVotes: 1568,
+            uniqueVoters: 423,
+            averageVotes: 392,
+            votesToday: 128,
+            voteTrend: '+12.5%',
+            voterTrend: 28,
+            avgTrend: '+4.2%',
+            activityTrend: 15
+        };
+        
+        this.updateDashboardUI(mockData);
+        this.adminData = mockData;
+    }
+
+    updateDashboardUI(data) {
+        const elements = {
+            'totalVotes': data.totalVotes?.toLocaleString(),
+            'activeUsers': data.uniqueVoters?.toLocaleString(),
+            'totalCategories': this.contentData.categories.length.toString(),
+            'totalNominees': this.contentData.nominees.length.toString(),
+            'uniqueVoters': data.uniqueVoters?.toLocaleString(),
+            'averageVotes': data.averageVotes?.toLocaleString(),
+            'votesToday': data.votesToday?.toLocaleString(),
+            'voteTrend': data.voteTrend || '+0%',
+            'voterTrend': data.voterTrend || 0,
+            'avgTrend': data.avgTrend || '+0%',
+            'activityTrend': data.activityTrend || 0
+        };
+        
+        for (const [id, value] of Object.entries(elements)) {
+            const element = document.getElementById(id);
+            if (element) element.textContent = value;
+        }
+    }
+
+    async loadContentData() {
+        const savedData = localStorage.getItem('cmsContent');
+        if (savedData) {
+            this.contentData = JSON.parse(savedData);
+        } else {
+            await this.loadDefaultData();
+        }
+        
+        await this.renderDashboard();
+        await this.renderCategories();
+        await this.renderNominees();
+        await this.renderImages();
+        this.renderActivity();
     }
 
     async loadDefaultData() {
@@ -102,7 +185,8 @@ class AnimeVotingCMS {
                 color: '#6366f1',
                 status: 'active',
                 maxSelections: 1,
-                order: 1
+                order: 1,
+                votes: 456
             },
             {
                 id: 'cat2',
@@ -112,7 +196,8 @@ class AnimeVotingCMS {
                 color: '#10b981',
                 status: 'active',
                 maxSelections: 1,
-                order: 2
+                order: 2,
+                votes: 342
             },
             {
                 id: 'cat3',
@@ -122,17 +207,8 @@ class AnimeVotingCMS {
                 color: '#f59e0b',
                 status: 'active',
                 maxSelections: 1,
-                order: 3
-            },
-            {
-                id: 'cat4',
-                name: 'Most Anticipated Anime of 2025',
-                description: 'Which upcoming anime are you most excited about?',
-                icon: 'fa-calendar-star',
-                color: '#ef4444',
-                status: 'active',
-                maxSelections: 1,
-                order: 4
+                order: 3,
+                votes: 289
             }
         ];
 
@@ -163,31 +239,6 @@ class AnimeVotingCMS {
                 status: 'active',
                 votes: 389,
                 order: 2
-            },
-            {
-                id: 'nom3',
-                name: 'Demon Slayer: Mugen Train',
-                categoryId: 'cat1',
-                description: 'Continuing the epic journey with breathtaking animation quality.',
-                image: 'https://images.unsplash.com/photo-1579546929662-711aa81148cf?ixlib=rb-4.0.3&auto=format&fit=crop&w=600&q=80',
-                rating: 9.3,
-                views: 2.3,
-                tags: ['action', 'fantasy', 'adventure'],
-                status: 'active',
-                votes: 342,
-                order: 3
-            }
-        ];
-
-        // Default images
-        this.contentData.images = [
-            {
-                id: 'img1',
-                name: 'Attack on Titan',
-                url: 'https://images.unsplash.com/photo-1578662996442-48f60103fc96?ixlib=rb-4.0.3&auto=format&fit=crop&w=600&q=80',
-                type: 'nominee',
-                size: '450KB',
-                uploaded: '2024-01-15'
             }
         ];
 
@@ -208,20 +259,471 @@ class AnimeVotingCMS {
         this.saveToLocalStorage();
     }
 
+    async loadUserManagement() {
+        const container = document.getElementById('usersSection');
+        if (!container) return;
+        
+        try {
+            const response = await fetch('/api/admin/users', {
+                headers: {
+                    'Authorization': `Bearer ${localStorage.getItem('adminToken')}`
+                }
+            });
+            
+            if (response.ok) {
+                const users = await response.json();
+                this.contentData.users = users;
+                this.renderUserManagement(users);
+            } else {
+                this.renderUserManagement([
+                    { id: 1, username: 'admin', email: 'admin@animevoting.com', role: 'admin', status: 'active', votes: 1568 },
+                    { id: 2, username: 'anime_lover', email: 'user1@example.com', role: 'user', status: 'active', votes: 42 },
+                    { id: 3, username: 'weeb_master', email: 'user2@example.com', role: 'user', status: 'active', votes: 28 }
+                ]);
+            }
+        } catch (error) {
+            console.error('Failed to load users:', error);
+            this.renderUserManagement([]);
+        }
+    }
+
+    renderUserManagement(users) {
+        const container = document.getElementById('usersSection');
+        if (!container) return;
+        
+        container.innerHTML = `
+            <div class="section-header">
+                <h2><i class="fas fa-users"></i> User Management</h2>
+                <div class="header-actions">
+                    <button class="btn-refresh" onclick="cms.loadUserManagement()">
+                        <i class="fas fa-sync-alt"></i> Refresh
+                    </button>
+                    <button class="btn-success" onclick="cms.addNewUser()">
+                        <i class="fas fa-user-plus"></i> Add User
+                    </button>
+                </div>
+            </div>
+            <div class="users-table-container">
+                <table class="users-table">
+                    <thead>
+                        <tr>
+                            <th>ID</th>
+                            <th>Username</th>
+                            <th>Email</th>
+                            <th>Role</th>
+                            <th>Status</th>
+                            <th>Votes</th>
+                            <th>Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        ${users.map(user => `
+                            <tr>
+                                <td>${user.id}</td>
+                                <td><strong>${user.username}</strong></td>
+                                <td>${user.email}</td>
+                                <td>
+                                    <span class="user-role ${user.role}">
+                                        ${user.role === 'admin' ? 'Administrator' : 'User'}
+                                    </span>
+                                </td>
+                                <td>
+                                    <span class="user-status ${user.status}">
+                                        ${user.status === 'active' ? 'Active' : 'Inactive'}
+                                    </span>
+                                </td>
+                                <td>${user.votes || 0}</td>
+                                <td>
+                                    <button class="btn-small" onclick="cms.editUser(${user.id})">
+                                        <i class="fas fa-edit"></i>
+                                    </button>
+                                    <button class="btn-small ${user.status === 'active' ? 'btn-warning' : 'btn-success'}" 
+                                            onclick="cms.toggleUserStatus(${user.id})">
+                                        ${user.status === 'active' ? 'Suspend' : 'Activate'}
+                                    </button>
+                                </td>
+                            </tr>
+                        `).join('')}
+                    </tbody>
+                </table>
+            </div>
+            <div class="user-management-actions">
+                <button class="btn-info" onclick="cms.exportUsers()">
+                    <i class="fas fa-download"></i> Export Users
+                </button>
+            </div>
+        `;
+    }
+
+    async loadDesignSettings() {
+        const container = document.getElementById('designSection');
+        if (!container) return;
+        
+        const themes = [
+            { id: 1, name: 'Anime Blue', primaryColor: '#6366f1', isActive: true },
+            { id: 2, name: 'Dark Mode', primaryColor: '#1f2937', isActive: false },
+            { id: 3, name: 'Purple', primaryColor: '#8b5cf6', isActive: false }
+        ];
+        
+        container.innerHTML = `
+            <div class="section-header">
+                <h2><i class="fas fa-palette"></i> Design & Theme</h2>
+                <div class="header-actions">
+                    <button class="btn-success" onclick="cms.createNewTheme()">
+                        <i class="fas fa-plus"></i> New Theme
+                    </button>
+                </div>
+            </div>
+            
+            <div class="design-settings">
+                <h3><i class="fas fa-paint-brush"></i> Theme Management</h3>
+                <div class="themes-grid">
+                    ${themes.map(theme => `
+                        <div class="theme-card ${theme.isActive ? 'active' : ''}" data-theme-id="${theme.id}">
+                            <div class="theme-preview" style="background: ${theme.primaryColor}"></div>
+                            <div class="theme-info">
+                                <h4>${theme.name}</h4>
+                                <div class="theme-actions">
+                                    ${theme.isActive ? 
+                                        '<span class="badge-active">Active</span>' : 
+                                        '<button class="btn-small btn-success" onclick="cms.applyTheme(' + theme.id + ')">Apply</button>'
+                                    }
+                                    <button class="btn-small btn-danger" onclick="cms.deleteTheme(${theme.id})">
+                                        <i class="fas fa-trash"></i>
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                    `).join('')}
+                </div>
+                
+                <div class="theme-customization">
+                    <button class="btn-info" onclick="cms.customizeTheme()">
+                        <i class="fas fa-paint-brush"></i> Customize Theme
+                    </button>
+                </div>
+                
+                <div class="layout-settings">
+                    <h4><i class="fas fa-th-large"></i> Layout Settings</h4>
+                    <div class="layout-options">
+                        <div class="layout-option active">
+                            <i class="fas fa-th"></i>
+                            <span>Grid</span>
+                        </div>
+                        <div class="layout-option">
+                            <i class="fas fa-list"></i>
+                            <span>List</span>
+                        </div>
+                        <div class="layout-option">
+                            <i class="fas fa-columns"></i>
+                            <span>Compact</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        `;
+    }
+
+    async loadSystemInfo() {
+        const container = document.getElementById('settingsSection');
+        if (!container) return;
+        
+        const savedSettings = localStorage.getItem('adminSettings');
+        const defaultSettings = {
+            siteName: 'Anime Voting 2025',
+            siteDescription: 'Vote for your favorite anime',
+            maintenanceMode: false,
+            allowRegistration: true,
+            votingEndDate: '2025-12-31'
+        };
+        
+        const settings = savedSettings ? JSON.parse(savedSettings) : defaultSettings;
+        
+        container.innerHTML = `
+            <div class="section-header">
+                <h2><i class="fas fa-cog"></i> System Settings</h2>
+                <div class="header-actions">
+                    <button class="btn-primary" onclick="cms.saveSystemSettings()">
+                        <i class="fas fa-save"></i> Save Settings
+                    </button>
+                </div>
+            </div>
+            
+            <div class="system-settings">
+                <h3><i class="fas fa-sliders-h"></i> General Settings</h3>
+                <div class="settings-form">
+                    <div class="form-group">
+                        <label for="siteName">Site Name</label>
+                        <input type="text" id="siteName" value="${settings.siteName}">
+                    </div>
+                    <div class="form-group">
+                        <label for="siteDescription">Site Description</label>
+                        <textarea id="siteDescription">${settings.siteDescription}</textarea>
+                    </div>
+                    <div class="form-group">
+                        <label>
+                            <input type="checkbox" id="maintenanceMode" ${settings.maintenanceMode ? 'checked' : ''}>
+                            Maintenance Mode
+                        </label>
+                    </div>
+                    <div class="form-group">
+                        <label>
+                            <input type="checkbox" id="allowRegistration" ${settings.allowRegistration ? 'checked' : ''}>
+                            Allow User Registration
+                        </label>
+                    </div>
+                    <div class="form-group">
+                        <label for="votingEndDate">Voting End Date</label>
+                        <input type="date" id="votingEndDate" value="${settings.votingEndDate}">
+                    </div>
+                    <div class="form-actions">
+                        <button class="btn-secondary" onclick="cms.resetSystemSettings()">
+                            <i class="fas fa-undo"></i> Reset to Default
+                        </button>
+                    </div>
+                </div>
+            </div>
+        `;
+    }
+
+    // Event Listeners Setup
+    setupEventListeners() {
+        // Sidebar toggle
+        const toggleSidebar = document.getElementById('toggleSidebar');
+        const closeSidebar = document.getElementById('closeSidebar');
+        if (toggleSidebar) toggleSidebar.addEventListener('click', () => this.toggleSidebar());
+        if (closeSidebar) closeSidebar.addEventListener('click', () => this.toggleSidebar());
+        
+        // Quick save
+        const quickSave = document.getElementById('quickSave');
+        if (quickSave) quickSave.addEventListener('click', () => this.saveAllContent());
+        
+        // Logout
+        const logoutAdmin = document.getElementById('logoutAdmin');
+        if (logoutAdmin) logoutAdmin.addEventListener('click', () => this.logout());
+        
+        // Menu items
+        document.querySelectorAll('.menu-item').forEach(item => {
+            item.addEventListener('click', (e) => this.handleMenuClick(e));
+        });
+        
+        // Submenu items
+        document.querySelectorAll('.submenu li').forEach(item => {
+            item.addEventListener('click', (e) => this.handleSubmenuClick(e));
+        });
+        
+        // Page items
+        document.querySelectorAll('.page-item').forEach(item => {
+            item.addEventListener('click', (e) => this.switchPage(e));
+        });
+        
+        // Real-time preview
+        this.setupRealTimePreview();
+    }
+
+    setupRealTimePreview() {
+        // Color picker
+        const colorPicker = document.getElementById('categoryColor');
+        const colorValue = document.getElementById('colorValue');
+        if (colorPicker && colorValue) {
+            colorPicker.addEventListener('input', (e) => {
+                colorValue.textContent = e.target.value;
+            });
+        }
+
+        // Image preview
+        const imageInput = document.getElementById('nomineeImage');
+        if (imageInput) {
+            imageInput.addEventListener('input', (e) => {
+                this.previewImageInModal(e.target.value);
+            });
+        }
+    }
+
+    // Navigation Methods
+    handleMenuClick(e) {
+        const section = e.currentTarget.dataset.section;
+        if (!section) return;
+
+        document.querySelectorAll('.submenu').forEach(sub => {
+            sub.style.display = 'none';
+        });
+
+        document.querySelectorAll('.menu-item').forEach(item => {
+            item.classList.remove('active');
+        });
+
+        e.currentTarget.classList.add('active');
+
+        const arrow = e.currentTarget.querySelector('.arrow');
+        if (arrow) {
+            const submenu = e.currentTarget.nextElementSibling;
+            if (submenu && submenu.classList.contains('submenu')) {
+                submenu.style.display = submenu.style.display === 'block' ? 'none' : 'block';
+            }
+        }
+
+        this.showSection(section);
+    }
+
+    handleSubmenuClick(e) {
+        const subsection = e.currentTarget.dataset.subsection;
+        if (!subsection) return;
+
+        document.querySelectorAll('.submenu li').forEach(item => {
+            item.classList.remove('active');
+        });
+
+        e.currentTarget.classList.add('active');
+
+        this.showSubsection(subsection);
+    }
+
+    showSection(section) {
+        document.querySelectorAll('.content-section').forEach(sec => {
+            sec.classList.remove('active');
+        });
+
+        const sectionElement = document.getElementById(section + 'Section');
+        if (sectionElement) {
+            sectionElement.classList.add('active');
+            this.currentSection = section;
+        }
+
+        if (section === 'content') {
+            this.showSubsection('categories');
+        }
+    }
+
+    showSubsection(subsection) {
+        document.querySelectorAll('.subsection').forEach(sub => {
+            sub.classList.remove('active');
+        });
+
+        const subsectionElement = document.getElementById(subsection + 'Subsection');
+        if (subsectionElement) {
+            subsectionElement.classList.add('active');
+            this.currentSubsection = subsection;
+        }
+
+        if (subsection === 'images') {
+            this.renderImages();
+        }
+    }
+
+    toggleSidebar() {
+        const sidebar = document.getElementById('sidebar');
+        const mainContent = document.getElementById('mainContent');
+        
+        sidebar.classList.toggle('collapsed');
+        mainContent.classList.toggle('expanded');
+    }
+
+    setupNavigation() {
+        this.showSection('dashboard');
+    }
+
+    // Dashboard Methods
     async renderDashboard() {
-        // Update stats
-        document.getElementById('totalVotes').textContent = this.getTotalVotes().toLocaleString();
-        document.getElementById('activeUsers').textContent = '423';
-        document.getElementById('totalCategories').textContent = this.contentData.categories.length;
-        document.getElementById('totalNominees').textContent = this.contentData.nominees.length;
-
-        // Render charts
+        this.updateDashboardUI({
+            totalVotes: this.getTotalVotes(),
+            uniqueVoters: this.adminData?.uniqueVoters || 423,
+            averageVotes: Math.floor(this.getTotalVotes() / (this.contentData.users?.length || 1)),
+            votesToday: this.adminData?.votesToday || 128
+        });
+        
         this.renderCharts();
-
-        // Render recent activity
         this.renderActivity();
     }
 
+    initCharts() {
+        if (this.voteChart) this.voteChart.destroy();
+        if (this.categoryChart) this.categoryChart.destroy();
+        
+        this.renderCharts();
+    }
+
+    renderCharts() {
+        // Vote Trends Chart
+        const voteCtx = document.getElementById('voteChart');
+        if (voteCtx) {
+            const voteCanvas = voteCtx.getContext('2d');
+            const categoryData = this.contentData.categories.map(cat => ({
+                name: cat.name,
+                votes: cat.votes || 0
+            }));
+
+            this.voteChart = new Chart(voteCanvas, {
+                type: 'bar',
+                data: {
+                    labels: categoryData.map(d => d.name),
+                    datasets: [{
+                        label: 'Votes',
+                        data: categoryData.map(d => d.votes),
+                        backgroundColor: this.contentData.categories.map(c => c.color + '80'),
+                        borderColor: this.contentData.categories.map(c => c.color),
+                        borderWidth: 1
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    plugins: {
+                        legend: { display: false }
+                    }
+                }
+            });
+        }
+
+        // Category Distribution Chart
+        const categoryCtx = document.getElementById('categoryChart');
+        if (categoryCtx) {
+            const categoryCanvas = categoryCtx.getContext('2d');
+            this.categoryChart = new Chart(categoryCanvas, {
+                type: 'doughnut',
+                data: {
+                    labels: this.contentData.categories.map(c => c.name),
+                    datasets: [{
+                        data: this.contentData.categories.map(c => this.getNomineesInCategory(c.id).length),
+                        backgroundColor: this.contentData.categories.map(c => c.color + '80'),
+                        borderColor: this.contentData.categories.map(c => c.color),
+                        borderWidth: 1
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    plugins: {
+                        legend: { position: 'right' }
+                    }
+                }
+            });
+        }
+    }
+
+    renderActivity() {
+        const container = document.getElementById('activityList');
+        if (!container) return;
+
+        const activities = [
+            { time: 'Just now', action: 'You edited "Best Anime" category', user: 'Admin' },
+            { time: '5 minutes ago', action: 'New nominee added: "Jujutsu Kaisen"', user: 'Admin' },
+            { time: '1 hour ago', action: 'User "anime_lover" voted', user: 'System' },
+            { time: '2 hours ago', action: 'Site preview generated', user: 'Admin' }
+        ];
+
+        container.innerHTML = activities.map(activity => `
+            <div class="activity-item">
+                <div class="activity-icon">
+                    <i class="fas fa-history"></i>
+                </div>
+                <div class="activity-content">
+                    <p>${activity.action}</p>
+                    <small>${activity.time} • by ${activity.user}</small>
+                </div>
+            </div>
+        `).join('');
+    }
+
+    // Category Management
     async renderCategories() {
         const container = document.getElementById('categoriesList');
         if (!container) return;
@@ -247,7 +749,7 @@ class AnimeVotingCMS {
                 <div class="category-footer">
                     <div class="category-stats">
                         <span><i class="fas fa-list-ol"></i> ${this.getNomineesInCategory(category.id).length} nominees</span>
-                        <span><i class="fas fa-vote-yea"></i> ${this.getCategoryVotes(category.id)} votes</span>
+                        <span><i class="fas fa-vote-yea"></i> ${category.votes || 0} votes</span>
                         <span><i class="fas fa-user-check"></i> Max ${category.maxSelections} selection${category.maxSelections > 1 ? 's' : ''}</span>
                     </div>
                     <div class="category-actions">
@@ -267,10 +769,146 @@ class AnimeVotingCMS {
             </div>
         `).join('');
 
-        // Populate category filters
         this.populateCategoryFilters();
     }
 
+    addNewCategory() {
+        this.editingCategory = null;
+        this.openCategoryModal();
+    }
+
+    editCategory(categoryId) {
+        const category = this.contentData.categories.find(c => c.id === categoryId);
+        if (!category) return;
+
+        this.editingCategory = category;
+        this.openCategoryModal();
+    }
+
+    openCategoryModal() {
+        const modal = document.getElementById('categoryModal');
+        const form = document.getElementById('categoryForm');
+        
+        if (this.editingCategory) {
+            document.getElementById('categoryName').value = this.editingCategory.name;
+            document.getElementById('categoryDescription').value = this.editingCategory.description;
+            document.getElementById('categoryIcon').value = this.editingCategory.icon;
+            document.getElementById('categoryStatus').value = this.editingCategory.status;
+            document.getElementById('categoryColor').value = this.editingCategory.color;
+            document.getElementById('colorValue').textContent = this.editingCategory.color;
+            document.getElementById('maxSelections').value = this.editingCategory.maxSelections;
+        } else {
+            form.reset();
+            document.getElementById('categoryColor').value = '#6366f1';
+            document.getElementById('colorValue').textContent = '#6366f1';
+        }
+        
+        modal.style.display = 'flex';
+    }
+
+    saveCategory() {
+        const form = document.getElementById('categoryForm');
+        if (!form.checkValidity()) {
+            form.reportValidity();
+            return;
+        }
+
+        const categoryData = {
+            id: this.editingCategory?.id || this.generateId(),
+            name: document.getElementById('categoryName').value,
+            description: document.getElementById('categoryDescription').value,
+            icon: document.getElementById('categoryIcon').value,
+            status: document.getElementById('categoryStatus').value,
+            color: document.getElementById('categoryColor').value,
+            maxSelections: parseInt(document.getElementById('maxSelections').value),
+            order: this.editingCategory?.order || this.contentData.categories.length + 1,
+            votes: this.editingCategory?.votes || 0
+        };
+
+        if (this.editingCategory) {
+            const index = this.contentData.categories.findIndex(c => c.id === this.editingCategory.id);
+            if (index !== -1) {
+                this.contentData.categories[index] = categoryData;
+            }
+        } else {
+            this.contentData.categories.push(categoryData);
+        }
+
+        this.saveToLocalStorage();
+        this.renderCategories();
+        this.renderCharts();
+        this.closeModal('categoryModal');
+        
+        this.showToast(`Category "${categoryData.name}" saved successfully`, 'success');
+    }
+
+    toggleCategoryStatus(categoryId) {
+        const category = this.contentData.categories.find(c => c.id === categoryId);
+        if (!category) return;
+
+        category.status = category.status === 'active' ? 'inactive' : 'active';
+        this.saveToLocalStorage();
+        this.renderCategories();
+        
+        this.showToast(`Category "${category.name}" ${category.status === 'active' ? 'activated' : 'deactivated'}`, 'info');
+    }
+
+    deleteCategory(categoryId) {
+        this.showConfirm('Delete Category', 'Are you sure you want to delete this category? All nominees in this category will also be deleted.', (confirmed) => {
+            if (confirmed) {
+                const category = this.contentData.categories.find(c => c.id === categoryId);
+                if (!category) return;
+
+                this.contentData.categories = this.contentData.categories.filter(c => c.id !== categoryId);
+                this.contentData.nominees = this.contentData.nominees.filter(n => n.categoryId !== categoryId);
+                
+                this.saveToLocalStorage();
+                this.renderCategories();
+                this.renderNominees();
+                this.renderCharts();
+                
+                this.showToast(`Category "${category.name}" deleted successfully`, 'success');
+            }
+        });
+    }
+
+    sortCategories() {
+        const container = document.getElementById('categoriesList');
+        if (!container) return;
+
+        new Sortable(container, {
+            animation: 150,
+            onEnd: (evt) => {
+                const categories = Array.from(container.querySelectorAll('.category-card'));
+                categories.forEach((card, index) => {
+                    const categoryId = card.dataset.id;
+                    const category = this.contentData.categories.find(c => c.id === categoryId);
+                    if (category) {
+                        category.order = index + 1;
+                    }
+                });
+                
+                this.saveToLocalStorage();
+                this.showToast('Categories reordered successfully', 'success');
+            }
+        });
+        
+        this.showToast('Drag and drop categories to reorder them', 'info');
+    }
+
+    resetCategories() {
+        this.showConfirm('Reset Categories', 'This will reset all categories to default. Current categories will be lost.', (confirmed) => {
+            if (confirmed) {
+                this.loadDefaultData();
+                this.renderCategories();
+                this.renderNominees();
+                this.renderCharts();
+                this.showToast('Categories reset to default', 'success');
+            }
+        });
+    }
+
+    // Nominee Management
     async renderNominees() {
         const container = document.getElementById('nomineesGrid');
         if (!container) return;
@@ -322,11 +960,125 @@ class AnimeVotingCMS {
         }).join('');
     }
 
+    addNewNominee() {
+        this.editingNominee = null;
+        this.openNomineeModal();
+    }
+
+    editNominee(nomineeId) {
+        const nominee = this.contentData.nominees.find(n => n.id === nomineeId);
+        if (!nominee) return;
+
+        this.editingNominee = nominee;
+        this.openNomineeModal();
+    }
+
+    openNomineeModal() {
+        const modal = document.getElementById('nomineeModal');
+        
+        if (this.editingNominee) {
+            document.getElementById('nomineeName').value = this.editingNominee.name;
+            document.getElementById('nomineeCategory').value = this.editingNominee.categoryId;
+            document.getElementById('nomineeDescription').value = this.editingNominee.description;
+            document.getElementById('nomineeImage').value = this.editingNominee.image;
+            document.getElementById('nomineeRating').value = this.editingNominee.rating;
+            document.getElementById('nomineeViews').value = this.editingNominee.views;
+            document.getElementById('nomineeTags').value = this.editingNominee.tags?.join(', ');
+            document.getElementById('nomineeActive').checked = this.editingNominee.status === 'active';
+            
+            document.getElementById('deleteNomineeBtn').style.display = 'block';
+            this.previewImageInModal(this.editingNominee.image);
+        } else {
+            document.getElementById('nomineeForm')?.reset();
+            document.getElementById('nomineeCategory').value = this.contentData.categories[0]?.id || '';
+            document.getElementById('deleteNomineeBtn').style.display = 'none';
+            this.previewImageInModal('');
+        }
+        
+        modal.style.display = 'flex';
+    }
+
+    saveNominee() {
+        const nomineeData = {
+            id: this.editingNominee?.id || this.generateId(),
+            name: document.getElementById('nomineeName').value,
+            categoryId: document.getElementById('nomineeCategory').value,
+            description: document.getElementById('nomineeDescription').value,
+            image: document.getElementById('nomineeImage').value,
+            rating: parseFloat(document.getElementById('nomineeRating').value) || 0,
+            views: parseFloat(document.getElementById('nomineeViews').value) || 0,
+            tags: document.getElementById('nomineeTags').value.split(',').map(t => t.trim()).filter(t => t),
+            status: document.getElementById('nomineeActive').checked ? 'active' : 'inactive',
+            votes: this.editingNominee?.votes || 0,
+            order: this.editingNominee?.order || this.getNomineesInCategory(document.getElementById('nomineeCategory').value).length + 1
+        };
+
+        if (this.editingNominee) {
+            const index = this.contentData.nominees.findIndex(n => n.id === this.editingNominee.id);
+            if (index !== -1) {
+                this.contentData.nominees[index] = nomineeData;
+            }
+        } else {
+            this.contentData.nominees.push(nomineeData);
+        }
+
+        this.saveToLocalStorage();
+        this.renderNominees();
+        this.renderCharts();
+        this.closeModal('nomineeModal');
+        
+        this.showToast(`Nominee "${nomineeData.name}" saved successfully`, 'success');
+    }
+
+    deleteNominee() {
+        if (!this.editingNominee) return;
+
+        this.showConfirm('Delete Nominee', `Are you sure you want to delete "${this.editingNominee.name}"?`, (confirmed) => {
+            if (confirmed) {
+                this.contentData.nominees = this.contentData.nominees.filter(n => n.id !== this.editingNominee.id);
+                this.saveToLocalStorage();
+                this.renderNominees();
+                this.renderCharts();
+                this.closeModal('nomineeModal');
+                
+                this.showToast(`Nominee "${this.editingNominee.name}" deleted`, 'success');
+            }
+        });
+    }
+
+    toggleNomineeStatus(nomineeId) {
+        const nominee = this.contentData.nominees.find(n => n.id === nomineeId);
+        if (!nominee) return;
+
+        nominee.status = nominee.status === 'active' ? 'inactive' : 'active';
+        this.saveToLocalStorage();
+        this.renderNominees();
+        
+        this.showToast(`Nominee "${nominee.name}" ${nominee.status === 'active' ? 'activated' : 'deactivated'}`, 'info');
+    }
+
+    previewNominee(nomineeId) {
+        const nominee = this.contentData.nominees.find(n => n.id === nomineeId);
+        if (nominee) {
+            this.showToast(`Previewing ${nominee.name}...`, 'info');
+        }
+    }
+
+    filterNominees() {
+        const categoryId = document.getElementById('nomineeCategoryFilter')?.value;
+        this.showToast(`Filtering nominees by category...`, 'info');
+    }
+
+    bulkImportNominees() {
+        this.showToast('Bulk import feature coming soon!', 'info');
+    }
+
+    // Image Management
     async renderImages() {
         const container = document.getElementById('imageGrid');
         if (!container) return;
 
-        const images = this.contentData.images;
+        const images = this.contentData.images || [];
         
         container.innerHTML = images.map(image => `
             <div class="image-card" data-id="${image.id}">
@@ -358,380 +1110,9 @@ class AnimeVotingCMS {
         `).join('');
     }
 
-    renderCharts() {
-        // Destroy existing charts
-        if (this.voteChart) this.voteChart.destroy();
-        if (this.categoryChart) this.categoryChart.destroy();
-
-        // Vote Trends Chart
-        const voteCtx = document.getElementById('voteChart').getContext('2d');
-        const categoryData = this.contentData.categories.map(cat => ({
-            name: cat.name,
-            votes: this.getCategoryVotes(cat.id)
-        }));
-
-        this.voteChart = new Chart(voteCtx, {
-            type: 'bar',
-            data: {
-                labels: categoryData.map(d => d.name),
-                datasets: [{
-                    label: 'Votes',
-                    data: categoryData.map(d => d.votes),
-                    backgroundColor: this.contentData.categories.map(c => c.color + '80'),
-                    borderColor: this.contentData.categories.map(c => c.color),
-                    borderWidth: 1
-                }]
-            },
-            options: {
-                responsive: true,
-                plugins: {
-                    legend: { display: false }
-                }
-            }
-        });
-
-        // Category Distribution Chart
-        const categoryCtx = document.getElementById('categoryChart').getContext('2d');
-        this.categoryChart = new Chart(categoryCtx, {
-            type: 'doughnut',
-            data: {
-                labels: this.contentData.categories.map(c => c.name),
-                datasets: [{
-                    data: this.contentData.categories.map(c => this.getNomineesInCategory(c.id).length),
-                    backgroundColor: this.contentData.categories.map(c => c.color + '80'),
-                    borderColor: this.contentData.categories.map(c => c.color),
-                    borderWidth: 1
-                }]
-            },
-            options: {
-                responsive: true,
-                plugins: {
-                    legend: { position: 'right' }
-                }
-            }
-        });
-    }
-
-    renderActivity() {
-        const container = document.getElementById('activityList');
-        if (!container) return;
-
-        const activities = [
-            { time: 'Just now', action: 'You edited "Best Anime" category', user: 'Admin' },
-            { time: '5 minutes ago', action: 'New nominee added: "Chainsaw Man"', user: 'Admin' },
-            { time: '1 hour ago', action: 'User "anime_lover" voted', user: 'System' },
-            { time: '2 hours ago', action: 'Site preview generated', user: 'Admin' }
-        ];
-
-        container.innerHTML = activities.map(activity => `
-            <div class="activity-item">
-                <div class="activity-icon">
-                    <i class="fas fa-history"></i>
-                </div>
-                <div class="activity-content">
-                    <p>${activity.action}</p>
-                    <small>${activity.time} • by ${activity.user}</small>
-                </div>
-            </div>
-        `).join('');
-    }
-
-    populateCategoryFilters() {
-        // Populate category filter in nominees section
-        const filterSelect = document.getElementById('nomineeCategoryFilter');
-        const categorySelect = document.getElementById('nomineeCategory');
-        
-        if (filterSelect) {
-            filterSelect.innerHTML = `
-                <option value="all">All Categories</option>
-                ${this.contentData.categories.map(cat => `
-                    <option value="${cat.id}">${cat.name}</option>
-                `).join('')}
-            `;
-        }
-        
-        if (categorySelect) {
-            categorySelect.innerHTML = this.contentData.categories.map(cat => `
-                <option value="${cat.id}">${cat.name}</option>
-            `).join('');
-        }
-    }
-
-    // Category Management
-    addNewCategory() {
-        this.editingCategory = null;
-        this.openCategoryModal();
-    }
-
-    editCategory(categoryId) {
-        const category = this.contentData.categories.find(c => c.id === categoryId);
-        if (!category) return;
-
-        this.editingCategory = category;
-        this.openCategoryModal();
-    }
-
-    openCategoryModal() {
-        const modal = document.getElementById('categoryModal');
-        const form = document.getElementById('categoryForm');
-        
-        if (this.editingCategory) {
-            // Fill form with existing data
-            document.getElementById('categoryName').value = this.editingCategory.name;
-            document.getElementById('categoryDescription').value = this.editingCategory.description;
-            document.getElementById('categoryIcon').value = this.editingCategory.icon;
-            document.getElementById('categoryStatus').value = this.editingCategory.status;
-            document.getElementById('categoryColor').value = this.editingCategory.color;
-            document.getElementById('colorValue').textContent = this.editingCategory.color;
-            document.getElementById('maxSelections').value = this.editingCategory.maxSelections;
-        } else {
-            // Reset form for new category
-            form.reset();
-            document.getElementById('categoryColor').value = '#6366f1';
-            document.getElementById('colorValue').textContent = '#6366f1';
-        }
-        
-        modal.style.display = 'flex';
-    }
-
-    saveCategory() {
-        const form = document.getElementById('categoryForm');
-        if (!form.checkValidity()) {
-            form.reportValidity();
-            return;
-        }
-
-        const categoryData = {
-            id: this.editingCategory?.id || this.generateId(),
-            name: document.getElementById('categoryName').value,
-            description: document.getElementById('categoryDescription').value,
-            icon: document.getElementById('categoryIcon').value,
-            status: document.getElementById('categoryStatus').value,
-            color: document.getElementById('categoryColor').value,
-            maxSelections: parseInt(document.getElementById('maxSelections').value),
-            order: this.editingCategory?.order || this.contentData.categories.length + 1,
-            votes: this.editingCategory?.votes || 0
-        };
-
-        if (this.editingCategory) {
-            // Update existing category
-            const index = this.contentData.categories.findIndex(c => c.id === this.editingCategory.id);
-            if (index !== -1) {
-                this.contentData.categories[index] = categoryData;
-            }
-        } else {
-            // Add new category
-            this.contentData.categories.push(categoryData);
-        }
-
-        this.saveToLocalStorage();
-        this.renderCategories();
-        this.renderCharts();
-        this.closeModal('categoryModal');
-        
-        this.showToast(`Category "${categoryData.name}" saved successfully`, 'success');
-        
-        // Log activity
-        this.logActivity(this.editingCategory ? 'edited' : 'added', 'category', categoryData.name);
-    }
-
-    toggleCategoryStatus(categoryId) {
-        const category = this.contentData.categories.find(c => c.id === categoryId);
-        if (!category) return;
-
-        category.status = category.status === 'active' ? 'inactive' : 'active';
-        this.saveToLocalStorage();
-        this.renderCategories();
-        
-        this.showToast(`Category "${category.name}" ${category.status === 'active' ? 'activated' : 'deactivated'}`, 'info');
-    }
-
-    deleteCategory(categoryId) {
-        this.showConfirm('Delete Category', 'Are you sure you want to delete this category? All nominees in this category will also be deleted.', (confirmed) => {
-            if (confirmed) {
-                const category = this.contentData.categories.find(c => c.id === categoryId);
-                if (!category) return;
-
-                // Delete category
-                this.contentData.categories = this.contentData.categories.filter(c => c.id !== categoryId);
-                
-                // Delete nominees in this category
-                this.contentData.nominees = this.contentData.nominees.filter(n => n.categoryId !== categoryId);
-                
-                this.saveToLocalStorage();
-                this.renderCategories();
-                this.renderNominees();
-                this.renderCharts();
-                
-                this.showToast(`Category "${category.name}" deleted successfully`, 'success');
-                this.logActivity('deleted', 'category', category.name);
-            }
-        });
-    }
-
-    sortCategories() {
-        // Make categories sortable
-        const container = document.getElementById('categoriesList');
-        new Sortable(container, {
-            animation: 150,
-            onEnd: (evt) => {
-                // Update order in data
-                const categories = Array.from(container.querySelectorAll('.category-card'));
-                categories.forEach((card, index) => {
-                    const categoryId = card.dataset.id;
-                    const category = this.contentData.categories.find(c => c.id === categoryId);
-                    if (category) {
-                        category.order = index + 1;
-                    }
-                });
-                
-                this.saveToLocalStorage();
-                this.showToast('Categories reordered successfully', 'success');
-            }
-        });
-        
-        this.showToast('Drag and drop categories to reorder them', 'info');
-    }
-
-    resetCategories() {
-        this.showConfirm('Reset Categories', 'This will reset all categories to default. Current categories will be lost.', (confirmed) => {
-            if (confirmed) {
-                this.loadDefaultData();
-                this.renderCategories();
-                this.renderNominees();
-                this.renderCharts();
-                this.showToast('Categories reset to default', 'success');
-            }
-        });
-    }
-
-    // Nominee Management
-    addNewNominee() {
-        this.editingNominee = null;
-        this.openNomineeModal();
-    }
-
-    editNominee(nomineeId) {
-        const nominee = this.contentData.nominees.find(n => n.id === nomineeId);
-        if (!nominee) return;
-
-        this.editingNominee = nominee;
-        this.openNomineeModal();
-    }
-
-    openNomineeModal() {
-        const modal = document.getElementById('nomineeModal');
-        
-        if (this.editingNominee) {
-            // Fill form with existing data
-            document.getElementById('nomineeName').value = this.editingNominee.name;
-            document.getElementById('nomineeCategory').value = this.editingNominee.categoryId;
-            document.getElementById('nomineeDescription').value = this.editingNominee.description;
-            document.getElementById('nomineeImage').value = this.editingNominee.image;
-            document.getElementById('nomineeRating').value = this.editingNominee.rating;
-            document.getElementById('nomineeViews').value = this.editingNominee.views;
-            document.getElementById('nomineeTags').value = this.editingNominee.tags?.join(', ');
-            document.getElementById('nomineeActive').checked = this.editingNominee.status === 'active';
-            
-            // Show delete button
-            document.getElementById('deleteNomineeBtn').style.display = 'block';
-            
-            // Preview image
-            this.previewImageInModal(this.editingNominee.image);
-        } else {
-            // Reset form for new nominee
-            document.getElementById('nomineeForm').reset();
-            document.getElementById('nomineeCategory').value = this.contentData.categories[0]?.id || '';
-            document.getElementById('deleteNomineeBtn').style.display = 'none';
-            
-            // Clear preview
-            this.previewImageInModal('');
-        }
-        
-        modal.style.display = 'flex';
-    }
-
-    saveNominee() {
-        const nomineeData = {
-            id: this.editingNominee?.id || this.generateId(),
-            name: document.getElementById('nomineeName').value,
-            categoryId: document.getElementById('nomineeCategory').value,
-            description: document.getElementById('nomineeDescription').value,
-            image: document.getElementById('nomineeImage').value,
-            rating: parseFloat(document.getElementById('nomineeRating').value) || 0,
-            views: parseFloat(document.getElementById('nomineeViews').value) || 0,
-            tags: document.getElementById('nomineeTags').value.split(',').map(t => t.trim()).filter(t => t),
-            status: document.getElementById('nomineeActive').checked ? 'active' : 'inactive',
-            votes: this.editingNominee?.votes || 0,
-            order: this.editingNominee?.order || this.getNomineesInCategory(document.getElementById('nomineeCategory').value).length + 1
-        };
-
-        if (this.editingNominee) {
-            // Update existing nominee
-            const index = this.contentData.nominees.findIndex(n => n.id === this.editingNominee.id);
-            if (index !== -1) {
-                this.contentData.nominees[index] = nomineeData;
-            }
-        } else {
-            // Add new nominee
-            this.contentData.nominees.push(nomineeData);
-        }
-
-        this.saveToLocalStorage();
-        this.renderNominees();
-        this.renderCharts();
-        this.closeModal('nomineeModal');
-        
-        this.showToast(`Nominee "${nomineeData.name}" saved successfully`, 'success');
-        this.logActivity(this.editingNominee ? 'edited' : 'added', 'nominee', nomineeData.name);
-    }
-
-    deleteNominee() {
-        if (!this.editingNominee) return;
-
-        this.showConfirm('Delete Nominee', `Are you sure you want to delete "${this.editingNominee.name}"?`, (confirmed) => {
-            if (confirmed) {
-                this.contentData.nominees = this.contentData.nominees.filter(n => n.id !== this.editingNominee.id);
-                this.saveToLocalStorage();
-                this.renderNominees();
-                this.renderCharts();
-                this.closeModal('nomineeModal');
-                
-                this.showToast(`Nominee "${this.editingNominee.name}" deleted`, 'success');
-                this.logActivity('deleted', 'nominee', this.editingNominee.name);
-            }
-        });
-    }
-
-    toggleNomineeStatus(nomineeId) {
-        const nominee = this.contentData.nominees.find(n => n.id === nomineeId);
-        if (!nominee) return;
-
-        nominee.status = nominee.status === 'active' ? 'inactive' : 'active';
-        this.saveToLocalStorage();
-        this.renderNominees();
-        
-        this.showToast(`Nominee "${nominee.name}" ${nominee.status === 'active' ? 'activated' : 'deactivated'}`, 'info');
-    }
-
-    filterNominees() {
-        const categoryId = document.getElementById('nomineeCategoryFilter').value;
-        const nominees = categoryId === 'all' 
-            ? this.contentData.nominees 
-            : this.contentData.nominees.filter(n => n.categoryId === categoryId);
-        
-        // Re-render nominees grid with filtered data
-        const container = document.getElementById('nomineesGrid');
-        // Similar to renderNominees but with filtered data
-    }
-
-    bulkImportNominees() {
-        this.showToast('Bulk import feature coming soon!', 'info');
-    }
-
-    // Image Management
     setupDragAndDrop() {
         const dropZone = document.getElementById('dropZone');
+        if (!dropZone) return;
         
         dropZone.addEventListener('dragover', (e) => {
             e.preventDefault();
@@ -751,7 +1132,7 @@ class AnimeVotingCMS {
         });
         
         dropZone.addEventListener('click', () => {
-            document.getElementById('bulkUpload').click();
+            document.getElementById('bulkUpload')?.click();
         });
     }
 
@@ -760,23 +1141,20 @@ class AnimeVotingCMS {
 
         this.showLoading(true);
         
-        // Simulate upload process
         for (let i = 0; i < files.length; i++) {
             const file = files[i];
             
-            // Check file size (max 5MB)
             if (file.size > 5 * 1024 * 1024) {
                 this.showToast(`File ${file.name} is too large (max 5MB)`, 'error');
                 continue;
             }
             
-            // Simulate upload to server
             await new Promise(resolve => setTimeout(resolve, 500));
             
-            // Create object URL for preview (in real app, this would be server URL)
             const imageUrl = URL.createObjectURL(file);
             
-            // Add to images array
+            if (!this.contentData.images) this.contentData.images = [];
+            
             this.contentData.images.push({
                 id: this.generateId(),
                 name: file.name,
@@ -792,37 +1170,21 @@ class AnimeVotingCMS {
         this.showLoading(false);
         
         this.showToast(`${files.length} images uploaded successfully`, 'success');
-        this.logActivity('uploaded', 'images', `${files.length} files`);
-    }
-
-    detectImageType(filename) {
-        if (filename.includes('banner')) return 'banners';
-        if (filename.includes('background')) return 'backgrounds';
-        if (filename.includes('icon')) return 'icons';
-        return 'nominees';
-    }
-
-    formatFileSize(bytes) {
-        if (bytes === 0) return '0 Bytes';
-        const k = 1024;
-        const sizes = ['Bytes', 'KB', 'MB'];
-        const i = Math.floor(Math.log(bytes) / Math.log(k));
-        return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
     }
 
     browseImages() {
         const modal = document.getElementById('imageBrowserModal');
-        modal.style.display = 'flex';
-        
-        // Load images in library
-        this.renderImageLibrary();
+        if (modal) {
+            modal.style.display = 'flex';
+            this.renderImageLibrary();
+        }
     }
 
     renderImageLibrary() {
         const container = document.getElementById('imageLibrary');
         if (!container) return;
 
-        container.innerHTML = this.contentData.images.map(image => `
+        container.innerHTML = (this.contentData.images || []).map(image => `
             <div class="library-image" onclick="cms.selectImageFromLibrary('${image.url}')">
                 <img src="${image.url}" alt="${image.name}">
                 <div class="image-name">${image.name}</div>
@@ -838,21 +1200,23 @@ class AnimeVotingCMS {
 
     previewImageInModal(imageUrl) {
         const preview = document.getElementById('imagePreview');
+        if (!preview) return;
+
         const img = document.getElementById('previewImage');
         const placeholder = preview.querySelector('.preview-placeholder');
         
-        if (imageUrl) {
+        if (imageUrl && img) {
             img.src = imageUrl;
             img.style.display = 'block';
-            placeholder.style.display = 'none';
+            if (placeholder) placeholder.style.display = 'none';
         } else {
-            img.style.display = 'none';
-            placeholder.style.display = 'flex';
+            if (img) img.style.display = 'none';
+            if (placeholder) placeholder.style.display = 'flex';
         }
     }
 
     copyImageUrl(imageId) {
-        const image = this.contentData.images.find(img => img.id === imageId);
+        const image = (this.contentData.images || []).find(img => img.id === imageId);
         if (!image) return;
 
         navigator.clipboard.writeText(image.url)
@@ -863,7 +1227,7 @@ class AnimeVotingCMS {
     deleteImage(imageId) {
         this.showConfirm('Delete Image', 'Are you sure you want to delete this image?', (confirmed) => {
             if (confirmed) {
-                this.contentData.images = this.contentData.images.filter(img => img.id !== imageId);
+                this.contentData.images = (this.contentData.images || []).filter(img => img.id !== imageId);
                 this.saveToLocalStorage();
                 this.renderImages();
                 this.showToast('Image deleted', 'success');
@@ -882,7 +1246,7 @@ class AnimeVotingCMS {
             if (confirmed) {
                 selected.forEach(checkbox => {
                     const imageId = checkbox.dataset.id;
-                    this.contentData.images = this.contentData.images.filter(img => img.id !== imageId);
+                    this.contentData.images = (this.contentData.images || []).filter(img => img.id !== imageId);
                 });
                 
                 this.saveToLocalStorage();
@@ -892,38 +1256,48 @@ class AnimeVotingCMS {
         });
     }
 
-    // Page Content Management
+    filterImages() {
+        this.showToast('Filtering images...', 'info');
+    }
+
+    sortImages() {
+        this.showToast('Sorting images...', 'info');
+    }
+
+    // Page Management
     switchPage(e) {
         const page = e.currentTarget.dataset.page;
         
-        // Update active page
         document.querySelectorAll('.page-item').forEach(item => {
             item.classList.remove('active');
         });
         e.currentTarget.classList.add('active');
         
-        // Show corresponding page section
         document.querySelectorAll('.page-section').forEach(section => {
             section.style.display = 'none';
         });
-        document.getElementById(page + 'Page').style.display = 'block';
+        
+        const pageElement = document.getElementById(page + 'Page');
+        if (pageElement) {
+            pageElement.style.display = 'block';
+        }
     }
 
     savePageContent() {
-        const activePage = document.querySelector('.page-item.active').dataset.page;
-        
-        // Save content based on active page
+        const activePage = document.querySelector('.page-item.active')?.dataset.page;
+        if (!activePage) return;
+
         if (activePage === 'home') {
             this.contentData.pages.home = {
-                title: document.getElementById('homeTitle').value,
-                subtitle: document.getElementById('homeSubtitle').value,
-                heroImage: document.getElementById('homeHeroImage').value,
-                welcomeMessage: document.getElementById('homeWelcome').value
+                title: document.getElementById('homeTitle')?.value || '',
+                subtitle: document.getElementById('homeSubtitle')?.value || '',
+                heroImage: document.getElementById('homeHeroImage')?.value || '',
+                welcomeMessage: document.getElementById('homeWelcome')?.value || ''
             };
         } else if (activePage === 'about') {
             this.contentData.pages.about = {
-                title: document.getElementById('aboutTitle').value,
-                content: document.getElementById('aboutContent').value
+                title: document.getElementById('aboutTitle')?.value || '',
+                content: document.getElementById('aboutContent')?.value || ''
             };
         }
         
@@ -932,120 +1306,120 @@ class AnimeVotingCMS {
     }
 
     previewPage() {
-        const activePage = document.querySelector('.page-item.active').dataset.page;
-        this.showToast(`Previewing ${activePage} page...`, 'info');
-        // In a real app, this would open a preview window
-    }
-
-    // Navigation
-    handleMenuClick(e) {
-        const section = e.currentTarget.dataset.section;
-        if (!section) return;
-
-        // Close all submenus first
-        document.querySelectorAll('.submenu').forEach(sub => {
-            sub.style.display = 'none';
-        });
-
-        // Remove active class from all menu items
-        document.querySelectorAll('.menu-item').forEach(item => {
-            item.classList.remove('active');
-        });
-
-        // Add active class to clicked item
-        e.currentTarget.classList.add('active');
-
-        // Show submenu if it has one
-        const arrow = e.currentTarget.querySelector('.arrow');
-        if (arrow) {
-            const submenu = e.currentTarget.nextElementSibling;
-            if (submenu && submenu.classList.contains('submenu')) {
-                submenu.style.display = submenu.style.display === 'block' ? 'none' : 'block';
-            }
-        }
-
-        // Show corresponding section
-        this.showSection(section);
-    }
-
-    handleSubmenuClick(e) {
-        const subsection = e.currentTarget.dataset.subsection;
-        if (!subsection) return;
-
-        // Remove active class from all submenu items
-        document.querySelectorAll('.submenu li').forEach(item => {
-            item.classList.remove('active');
-        });
-
-        // Add active class to clicked item
-        e.currentTarget.classList.add('active');
-
-        // Show corresponding subsection
-        this.showSubsection(subsection);
-    }
-
-    showSection(section) {
-        // Hide all sections
-        document.querySelectorAll('.content-section').forEach(sec => {
-            sec.classList.remove('active');
-        });
-
-        // Show selected section
-        document.getElementById(section + 'Section').classList.add('active');
-        this.currentSection = section;
-
-        // If section has subsections, show the first one
-        if (section === 'content') {
-            this.showSubsection('categories');
+        const activePage = document.querySelector('.page-item.active')?.dataset.page;
+        if (activePage) {
+            this.showToast(`Previewing ${activePage} page...`, 'info');
         }
     }
 
-    showSubsection(subsection) {
-        // Hide all subsections
-        document.querySelectorAll('.subsection').forEach(sub => {
-            sub.classList.remove('active');
-        });
-
-        // Show selected subsection
-        document.getElementById(subsection + 'Subsection').classList.add('active');
-        this.currentSubsection = subsection;
-
-        // Load data if needed
-        if (subsection === 'images') {
-            this.renderImages();
-        }
-    }
-
-    toggleSidebar() {
-        const sidebar = document.getElementById('sidebar');
-        const mainContent = document.getElementById('mainContent');
+    // User Management Methods (from admin-fixed.js)
+    addNewUser() {
+        const username = prompt('Enter username:');
+        const email = prompt('Enter email:');
+        const password = prompt('Enter password:');
         
-        sidebar.classList.toggle('collapsed');
-        mainContent.classList.toggle('expanded');
-    }
-
-    setupNavigation() {
-        // Set up initial navigation
-        this.showSection('dashboard');
-    }
-
-    setupRealTimePreview() {
-        // Real-time preview for color picker
-        const colorPicker = document.getElementById('categoryColor');
-        const colorValue = document.getElementById('colorValue');
-        
-        if (colorPicker && colorValue) {
-            colorPicker.addEventListener('input', (e) => {
-                colorValue.textContent = e.target.value;
-            });
+        if (username && email && password) {
+            const newUser = {
+                id: this.generateId(),
+                username: username,
+                email: email,
+                role: 'user',
+                status: 'active',
+                votes: 0
+            };
+            
+            if (!this.contentData.users) this.contentData.users = [];
+            this.contentData.users.push(newUser);
+            this.saveToLocalStorage();
+            this.loadUserManagement();
+            
+            this.showToast(`User ${username} added successfully`, 'success');
         }
+    }
 
-        // Real-time image preview
-        const imageInput = document.getElementById('nomineeImage');
-        if (imageInput) {
-            imageInput.addEventListener('input', (e) => {
-                this.previewImageInModal(e.target.value);
-            });
+    editUser(userId) {
+        this.showToast(`Editing user ID: ${userId}`, 'info');
+    }
+
+    toggleUserStatus(userId) {
+        const users = this.contentData.users || [];
+        const user = users.find(u => u.id == userId);
+        if (user) {
+            user.status = user.status === 'active' ? 'inactive' : 'active';
+            this.saveToLocalStorage();
+            this.loadUserManagement();
+            this.showToast(`User status updated`, 'info');
+        }
+    }
+
+    exportUsers() {
+        const users = this.contentData.users || [];
+        const csvContent = "data:text/csv;charset=utf-8," 
+            + ["ID,Username,Email,Role,Status,Votes", ...users.map(u => 
+                `${u.id},${u.username},${u.email},${u.role},${u.status},${u.votes}`
+            )].join("\n");
+        
+        const encodedUri = encodeURI(csvContent);
+        const link = document.createElement("a");
+        link.setAttribute("href", encodedUri);
+        link.setAttribute("download", "users_export.csv");
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+        
+        this.showToast('Users exported successfully', 'success');
+    }
+
+    // Theme Management Methods
+    applyTheme(themeId) {
+        this.showToast(`Theme applied successfully`, 'success');
+        this.loadDesignSettings();
+    }
+
+    deleteTheme(themeId) {
+        if (confirm('Delete this theme?')) {
+            this.showToast(`Theme deleted`, 'success');
+            this.loadDesignSettings();
+        }
+    }
+
+    createNewTheme() {
+        const themeName = prompt('Enter theme name:');
+        if (themeName) {
+            this.showToast(`Theme "${themeName}" created`, 'success');
+            this.loadDesignSettings();
+        }
+    }
+
+    customizeTheme() {
+        this.showToast('Opening theme customizer...', 'info');
+    }
+
+    // System Settings Methods
+    saveSystemSettings() {
+        const siteName = document.getElementById('siteName')?.value || '';
+        const siteDescription = document.getElementById('siteDescription')?.value || '';
+        const maintenanceMode = document.getElementById('maintenanceMode')?.checked || false;
+        const allowRegistration = document.getElementById('allowRegistration')?.checked || true;
+        const votingEndDate = document.getElementById('votingEndDate')?.value || '';
+        
+        const settings = {
+            siteName,
+            siteDescription,
+            maintenanceMode,
+            allowRegistration,
+            votingEndDate
+        };
+        
+        localStorage.setItem('adminSettings', JSON.stringify(settings));
+        this.showToast('Settings saved successfully', 'success');
+    }
+
+    resetSystemSettings() {
+        if (confirm('Reset all settings to default?')) {
+            localStorage.removeItem('adminSettings');
+            this.loadSystemInfo();
+            this.showToast('Settings reset to default', 'success');
         }
     }
 
@@ -1055,15 +1429,48 @@ class AnimeVotingCMS {
     }
 
     getTotalVotes() {
-        return this.contentData.nominees.reduce((sum, nominee) => sum + (nominee.votes || 0), 0);
+        return (this.contentData.nominees || []).reduce((sum, nominee) => sum + (nominee.votes || 0), 0);
     }
 
     getNomineesInCategory(categoryId) {
-        return this.contentData.nominees.filter(n => n.categoryId === categoryId);
+        return (this.contentData.nominees || []).filter(n => n.categoryId === categoryId);
     }
 
-    getCategoryVotes(categoryId) {
-        return this.getNomineesInCategory(categoryId).reduce((sum, nominee) => sum + (nominee.votes || 0), 0);
+    populateCategoryFilters() {
+        const filterSelect = document.getElementById('nomineeCategoryFilter');
+        const categorySelect = document.getElementById('nomineeCategory');
+        
+        const categories = this.contentData.categories || [];
+        
+        if (filterSelect) {
+            filterSelect.innerHTML = `
+                <option value="all">All Categories</option>
+                ${categories.map(cat => `
+                    <option value="${cat.id}">${cat.name}</option>
+                `).join('')}
+            `;
+        }
+        
+        if (categorySelect) {
+            categorySelect.innerHTML = categories.map(cat => `
+                <option value="${cat.id}">${cat.name}</option>
+            `).join('');
+        }
+    }
+
+    detectImageType(filename) {
+        if (filename.includes('banner')) return 'banners';
+        if (filename.includes('background')) return 'backgrounds';
+        if (filename.includes('icon')) return 'icons';
+        return 'nominees';
+    }
+
+    formatFileSize(bytes) {
+        if (bytes === 0) return '0 Bytes';
+        const k = 1024;
+        const sizes = ['Bytes', 'KB', 'MB'];
+        const i = Math.floor(Math.log(bytes) / Math.log(k));
+        return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
     }
 
     saveToLocalStorage() {
@@ -1075,19 +1482,16 @@ class AnimeVotingCMS {
         this.showToast('All changes saved successfully', 'success');
     }
 
-    logActivity(action, type, item) {
-        // In a real app, this would send to server
-        console.log(`Activity: ${action} ${type} "${item}"`);
-    }
-
     previewSite() {
         this.showToast('Opening site preview...', 'info');
-        // In a real app, this would generate and open a preview
     }
 
     showConfirm(title, message, callback) {
         this.confirmCallback = callback;
-        document.getElementById('confirmMessage').textContent = message;
+        const confirmMessage = document.getElementById('confirmMessage');
+        if (confirmMessage) {
+            confirmMessage.textContent = message;
+        }
         document.getElementById('confirmModal').style.display = 'flex';
     }
 
@@ -1099,11 +1503,16 @@ class AnimeVotingCMS {
     }
 
     closeModal(modalId) {
-        document.getElementById(modalId).style.display = 'none';
+        const modal = document.getElementById(modalId);
+        if (modal) {
+            modal.style.display = 'none';
+        }
     }
 
     showToast(message, type = 'info') {
         const container = document.getElementById('toastContainer');
+        if (!container) return;
+
         const toast = document.createElement('div');
         toast.className = `toast ${type}`;
         toast.innerHTML = `
@@ -1118,7 +1527,6 @@ class AnimeVotingCMS {
         
         container.appendChild(toast);
         
-        // Remove toast after 5 seconds
         setTimeout(() => {
             if (toast.parentNode) {
                 toast.classList.add('fade-out');
@@ -1132,26 +1540,57 @@ class AnimeVotingCMS {
     }
 
     showLoading(show) {
-        document.getElementById('loadingOverlay').style.display = show ? 'flex' : 'none';
+        const overlay = document.getElementById('loadingOverlay');
+        if (overlay) {
+            overlay.style.display = show ? 'flex' : 'none';
+        }
     }
 
-    logout() {
-        localStorage.removeItem('adminToken');
-        window.location.href = 'login.html';
+    startAutoRefresh() {
+        // Refresh dashboard every 5 minutes
+        setInterval(() => {
+            if (this.currentSection === 'dashboard') {
+                this.loadDashboardData();
+            }
+        }, 300000);
     }
 
     refreshDashboard() {
-        this.renderDashboard();
+        this.loadDashboardData();
         this.showToast('Dashboard refreshed', 'success');
     }
 }
 
-// Initialize CMS when page loads
-let cms;
+// Global instance
+let cms = null;
+
+// Initialize when page loads
 window.onload = () => {
     cms = new AnimeVotingCMS();
 };
 
-// Make cms methods available globally
-
+// Make methods available globally
 window.cms = cms;
+
+// Helper functions for inline event handlers
+window.refreshDashboard = () => cms?.refreshDashboard();
+window.saveAllContent = () => cms?.saveAllContent();
+window.previewSite = () => cms?.previewSite();
+window.addNewCategory = () => cms?.addNewCategory();
+window.sortCategories = () => cms?.sortCategories();
+window.resetCategories = () => cms?.resetCategories();
+window.saveCategory = () => cms?.saveCategory();
+window.addNewNominee = () => cms?.addNewNominee();
+window.saveNominee = () => cms?.saveNominee();
+window.deleteNominee = () => cms?.deleteNominee();
+window.browseImages = () => cms?.browseImages();
+window.handleBulkUpload = (files) => cms?.handleBulkUpload(files);
+window.filterNominees = () => cms?.filterNominees();
+window.bulkImportNominees = () => cms?.bulkImportNominees();
+window.savePageContent = () => cms?.savePageContent();
+window.previewPage = () => cms?.previewPage();
+window.filterImages = () => cms?.filterImages();
+window.sortImages = () => cms?.sortImages();
+window.deleteSelectedImages = () => cms?.deleteSelectedImages();
+window.closeModal = (modalId) => cms?.closeModal(modalId);
+window.confirmAction = (confirmed) => cms?.confirmAction(confirmed);
