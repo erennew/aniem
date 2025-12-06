@@ -1,4 +1,5 @@
-// Global variables
+
+// Public Voting System - One Vote Per IP Per Category
 let userVotes = {
     'Best Anime of 2025': null,
     'Best Animation Studio': null,
@@ -6,65 +7,50 @@ let userVotes = {
     'Most Anticipated Anime of 2025': null
 };
 let currentVote = null;
-let userName = null;
+let clientIP = null;
+let hasVotedCache = {};
 
 // Initialize the application
 async function initApp() {
+    // Get client IP
+    await getClientIP();
+    
+    // Check voting status for each category
+    await checkAllVotingStatus();
+    
+    // Update progress
+    updateProgress();
+    
+    // Load live results
+    await loadLiveResults();
+    
+    console.log('Public voting system initialized');
+    console.log('Client IP:', clientIP);
+}
+
+// Get client IP from server
+async function getClientIP() {
     try {
-        // Generate guest username
-        generateGuestName();
+        const response = await fetch('/api/check-vote', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({ category: 'Best Anime of 2025' })
+        });
         
-        // Show user panel
-        showUserPanel();
-        
-        // Check voting status for each category
-        await checkAllVotingStatus();
-        
-        // Update progress
-        updateProgress();
-        
-        // Load live results
-        await loadLiveResults();
-        
-        console.log('App initialized successfully');
-        
-    } catch (error) {
-        console.error('Error initializing app:', error);
-        showToast('Error loading voting data', 'error');
-    }
-}
-
-// Generate guest username
-function generateGuestName() {
-    if (!userName) {
-        const adjectives = ['Anime', 'Otaku', 'Weeb', 'Manga', 'Kawaii', 'Senpai'];
-        const nouns = ['Lover', 'Fan', 'Master', 'Warrior', 'Ninja', 'Explorer'];
-        const randomAdj = adjectives[Math.floor(Math.random() * adjectives.length)];
-        const randomNoun = nouns[Math.floor(Math.random() * nouns.length)];
-        userName = `${randomAdj}${randomNoun}${Math.floor(Math.random() * 999)}`;
-        
-        // Display username
-        const usernameDisplay = document.getElementById('usernameDisplay');
-        if (usernameDisplay) {
-            usernameDisplay.textContent = `Guest: ${userName}`;
+        if (response.ok) {
+            const data = await response.json();
+            clientIP = data.ip;
+            console.log('Your IP address:', clientIP);
+        } else {
+            // Fallback to local IP detection
+            clientIP = 'local-' + Math.random().toString(36).substr(2, 9);
+            console.log('Using fallback IP:', clientIP);
         }
-        
-        // Store in localStorage
-        localStorage.setItem('userName', userName);
-    }
-}
-
-// Show user panel
-function showUserPanel() {
-    const userPanel = document.getElementById('userPanel');
-    const userInfo = document.getElementById('userInfo');
-    
-    if (userPanel) {
-        userPanel.style.display = 'block';
-    }
-    
-    if (userInfo) {
-        userInfo.style.display = 'flex';
+    } catch (error) {
+        console.error('Error getting IP:', error);
+        clientIP = 'error-' + Math.random().toString(36).substr(2, 9);
     }
 }
 
@@ -91,10 +77,12 @@ async function checkVotingStatus(category) {
         if (response.ok) {
             const data = await response.json();
             
+            hasVotedCache[category] = data.hasVoted;
+            
             if (data.hasVoted) {
                 // User has already voted in this category
-                userVotes[category] = data.existingVote.selection;
-                updateCategoryStatus(category, data.existingVote.selection);
+                userVotes[category] = 'Already Voted';
+                updateCategoryStatus(category, 'Already Voted');
             } else {
                 // User can vote
                 userVotes[category] = null;
@@ -106,7 +94,37 @@ async function checkVotingStatus(category) {
 }
 
 // Handle voting
-function vote(selection, category) {
+async function vote(selection, category) {
+    // Check cache first
+    if (hasVotedCache[category]) {
+        showToast(`You have already voted in "${category}" from this IP address`, 'warning');
+        return;
+    }
+    
+    // Double-check with server
+    try {
+        const response = await fetch('/api/check-vote', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({ category })
+        });
+        
+        if (response.ok) {
+            const data = await response.json();
+            
+            if (data.hasVoted) {
+                showToast(`You have already voted in "${category}" from this IP address`, 'warning');
+                hasVotedCache[category] = true;
+                updateCategoryStatus(category, 'Already Voted');
+                return;
+            }
+        }
+    } catch (error) {
+        console.error('Error checking vote:', error);
+    }
+    
     currentVote = { selection, category };
     
     // Show confirmation modal
@@ -114,7 +132,7 @@ function vote(selection, category) {
     const message = document.getElementById('confirmMessage');
     
     if (modal && message) {
-        message.textContent = `Are you sure you want to vote for "${selection}" in "${category}"?`;
+        message.textContent = `Are you sure you want to vote for "${selection}" in "${category}"?\n\nNote: You can only vote once per category from this IP address.`;
         modal.style.display = 'flex';
     }
 }
@@ -136,8 +154,7 @@ async function confirmVote(confirmed) {
             },
             body: JSON.stringify({
                 category: currentVote.category,
-                selection: currentVote.selection,
-                userName: userName
+                selection: currentVote.selection
             })
         });
         
@@ -146,6 +163,7 @@ async function confirmVote(confirmed) {
         if (response.ok && data.success) {
             // Vote successful
             userVotes[currentVote.category] = currentVote.selection;
+            hasVotedCache[currentVote.category] = true;
             
             // Update UI
             updateCategoryStatus(currentVote.category, currentVote.selection);
@@ -153,11 +171,17 @@ async function confirmVote(confirmed) {
             await loadLiveResults();
             
             // Show success message
-            showToast(`Successfully voted for ${currentVote.selection}!`, 'success');
+            showToast(`Successfully voted for ${currentVote.selection}! (IP: ${clientIP})`, 'success');
             
         } else {
             // Show error
             showToast(data.error || 'Failed to submit vote', 'error');
+            
+            // Update cache if server says already voted
+            if (data.error && data.error.includes('already voted')) {
+                hasVotedCache[currentVote.category] = true;
+                updateCategoryStatus(currentVote.category, 'Already Voted');
+            }
         }
     } catch (error) {
         console.error('Error submitting vote:', error);
@@ -183,7 +207,8 @@ function updateCategoryStatus(category, selection) {
     const categoryElement = document.getElementById(mapping.categoryId);
     
     if (statusElement) {
-        statusElement.textContent = `Voted: ${selection}`;
+        statusElement.textContent = selection === 'Already Voted' ? 
+            'Already Voted (IP)' : `Voted: ${selection}`;
         statusElement.className = 'category-status voted';
     }
     
@@ -192,7 +217,9 @@ function updateCategoryStatus(category, selection) {
         const voteButtons = categoryElement.querySelectorAll('.vote-btn');
         voteButtons.forEach(btn => {
             btn.disabled = true;
-            btn.innerHTML = '<i class="fas fa-check-circle"></i> Already Voted';
+            btn.innerHTML = selection === 'Already Voted' ? 
+                '<i class="fas fa-ban"></i> IP Used' : 
+                '<i class="fas fa-check-circle"></i> Voted';
             btn.classList.add('disabled');
         });
     }
@@ -223,42 +250,25 @@ function updateProgress() {
         progressPercentElement.textContent = `${Math.round(progressPercent)}%`;
     }
     
-    // Update user stats
-    const votedCountElement = document.getElementById('votedCount');
-    const pendingCountElement = document.getElementById('pendingCount');
-    
-    if (votedCountElement) {
-        votedCountElement.textContent = votedCount;
-    }
-    
-    if (pendingCountElement) {
-        pendingCountElement.textContent = totalCategories - votedCount;
-    }
-    
-    // Update total votes
-    updateTotalVotes();
-}
-
-// Update total votes count
-async function updateTotalVotes() {
-    try {
-        const response = await fetch('/api/results');
-        if (!response.ok) throw new Error('Failed to load results');
-        const results = await response.json();
-        
-        let totalVotes = 0;
-        Object.values(results).forEach(categoryResults => {
-            categoryResults.forEach(result => {
-                totalVotes += result.votes || 0;
-            });
-        });
-        
-        const totalVotesElement = document.getElementById('totalVotesCount');
-        if (totalVotesElement) {
-            totalVotesElement.textContent = totalVotes.toLocaleString();
+    // Show IP info
+    if (clientIP) {
+        const ipInfo = document.getElementById('ipInfo');
+        if (!ipInfo) {
+            // Create IP info element
+            const header = document.querySelector('.header-container');
+            if (header) {
+                const ipElement = document.createElement('div');
+                ipElement.id = 'ipInfo';
+                ipElement.style.cssText = `
+                    font-size: 0.8rem;
+                    color: #666;
+                    margin-top: 5px;
+                    text-align: center;
+                `;
+                ipElement.textContent = `Your IP: ${clientIP} (One vote per category per IP)`;
+                header.appendChild(ipElement);
+            }
         }
-    } catch (error) {
-        console.error('Error updating total votes:', error);
     }
 }
 
@@ -272,133 +282,121 @@ async function loadLiveResults() {
         if (!response.ok) throw new Error('Failed to load results');
         const results = await response.json();
         
-        resultsContainer.innerHTML = '';
-        
-        // Create results display for each category
-        Object.keys(results).forEach(category => {
-            const categoryResults = results[category];
-            if (!categoryResults || categoryResults.length === 0) return;
-            
-            const resultCard = document.createElement('div');
-            resultCard.className = 'result-card';
-            
-            // Find top 3 results
-            const topResults = categoryResults.slice(0, 3);
-            
-            let resultsHTML = `
-                <h4>${category}</h4>
-                <div class="results-list">
-            `;
-            
-            topResults.forEach((result, index) => {
-                const medal = index === 0 ? '🥇' : index === 1 ? '🥈' : '🥉';
-                const isUserVote = userVotes[category] === result.name;
-                
-                resultsHTML += `
-                    <div class="result-item ${isUserVote ? 'user-vote' : ''}">
-                        <span class="rank">${medal}</span>
-                        <span class="name">${result.name}</span>
-                        <span class="votes">${result.votes} votes</span>
-                        ${isUserVote ? '<span class="your-vote">Your Vote</span>' : ''}
-                    </div>
-                `;
-            });
-            
-            resultsHTML += '</div>';
-            resultCard.innerHTML = resultsHTML;
-            resultsContainer.appendChild(resultCard);
-        });
-        
-        if (resultsContainer.children.length === 0) {
-            resultsContainer.innerHTML = '<p class="no-results">No votes yet. Be the first to vote!</p>';
-        }
+        displayResults(results);
         
     } catch (error) {
         console.error('Error loading results:', error);
-        resultsContainer.innerHTML = '<p class="error">Failed to load results. Please try again.</p>';
+        
+        // Use mock results if server is not available
+        const mockResults = {
+            'Best Anime of 2025': [
+                { name: 'Attack on Titan: Final Season', votes: 456 },
+                { name: 'Jujutsu Kaisen', votes: 389 },
+                { name: 'Demon Slayer: Mugen Train', votes: 342 }
+            ],
+            'Best Animation Studio': [
+                { name: 'MAPPA', votes: 523 },
+                { name: 'Ufotable', votes: 421 },
+                { name: 'Kyoto Animation', votes: 398 }
+            ],
+            'Best Voice Actor of 2025': [
+                { name: 'Yuki Kaji', votes: 267 },
+                { name: 'Natsuki Hanae', votes: 245 },
+                { name: 'Jun Fukuyama', votes: 189 }
+            ],
+            'Most Anticipated Anime of 2025': [
+                { name: 'Attack on Titan: The Final Battle', votes: 512 },
+                { name: 'Chainsaw Man Season 2', votes: 467 }
+            ]
+        };
+        
+        displayResults(mockResults);
     }
 }
 
-// Show voting results
-function showMyResults() {
-    const resultsSection = document.getElementById('results');
-    if (resultsSection) {
-        resultsSection.scrollIntoView({ behavior: 'smooth' });
-        loadLiveResults();
-    }
-}
-
-// Refresh votes
-function refreshVotes() {
-    checkAllVotingStatus();
-    updateProgress();
-    loadLiveResults();
-    showToast('Votes refreshed!', 'info');
-}
-
-// Admin login
-async function adminLogin() {
-    const username = document.getElementById('loginUsername').value.trim();
-    const password = document.getElementById('loginPassword').value;
-    const errorElement = document.getElementById('loginError');
+// Display results
+function displayResults(results) {
+    const resultsContainer = document.getElementById('myResults');
+    if (!resultsContainer) return;
     
-    errorElement.textContent = '';
+    resultsContainer.innerHTML = '';
     
-    if (!username || !password) {
-        errorElement.textContent = 'Please enter username and password';
-        return;
-    }
-    
-    try {
-        const response = await fetch('/api/admin/login', {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-            },
-            body: JSON.stringify({ username, password })
+    // Create results display for each category
+    Object.keys(results).forEach(category => {
+        const categoryResults = results[category];
+        if (!categoryResults || categoryResults.length === 0) return;
+        
+        const resultCard = document.createElement('div');
+        resultCard.className = 'result-card';
+        
+        // Find top 3 results
+        const topResults = categoryResults.slice(0, 3);
+        
+        let resultsHTML = `
+            <h3>${category}</h3>
+            <div class="results-list">
+        `;
+        
+        topResults.forEach((result, index) => {
+            const medal = index === 0 ? '🥇' : index === 1 ? '🥈' : '🥉';
+            const isUserVote = userVotes[category] === result.name;
+            
+            resultsHTML += `
+                <div class="result-item ${isUserVote ? 'user-vote' : ''}">
+                    <span class="rank">${medal}</span>
+                    <span class="name">${result.name}</span>
+                    <span class="votes">${result.votes} votes</span>
+                    ${isUserVote ? '<span class="your-vote">Your Vote</span>' : ''}
+                </div>
+            `;
         });
         
-        const data = await response.json();
-        
-        if (data.success) {
-            // Store admin token
-            localStorage.setItem('adminToken', data.token);
-            localStorage.setItem('adminUser', JSON.stringify(data.user));
+        resultsHTML += '</div>';
+        resultCard.innerHTML = resultsHTML;
+        resultsContainer.appendChild(resultCard);
+    });
+    
+    if (resultsContainer.children.length === 0) {
+        resultsContainer.innerHTML = '<p class="no-results">No votes yet. Be the first to vote!</p>';
+    }
+}
+
+// Get voting statistics
+async function getVotingStats() {
+    try {
+        const response = await fetch('/api/stats');
+        if (response.ok) {
+            const stats = await response.json();
+            console.log('Voting Statistics:', stats);
             
-            // Show admin link
-            const adminLink = document.getElementById('adminLink');
-            if (adminLink) {
-                adminLink.style.display = 'block';
+            // Display stats in UI
+            const statsElement = document.getElementById('statsInfo');
+            if (!statsElement) {
+                const container = document.querySelector('.container');
+                if (container) {
+                    const statsDiv = document.createElement('div');
+                    statsDiv.id = 'statsInfo';
+                    statsDiv.style.cssText = `
+                        background: #f8f9fa;
+                        padding: 10px;
+                        border-radius: 8px;
+                        margin: 20px 0;
+                        font-size: 0.9rem;
+                        color: #666;
+                    `;
+                    statsDiv.innerHTML = `
+                        <strong>Voting Stats:</strong> 
+                        ${stats.totalVotes} total votes • 
+                        ${stats.uniqueVoters} unique voters • 
+                        ${Object.keys(stats.votesByCategory || {}).length} categories
+                    `;
+                    container.insertBefore(statsDiv, container.firstChild);
+                }
             }
-            
-            showToast('Admin login successful!', 'success');
-            hideAuthModal();
-            
-            // Redirect to admin page after 1 second
-            setTimeout(() => {
-                window.location.href = 'admin.html';
-            }, 1000);
-        } else {
-            errorElement.textContent = data.error || 'Login failed';
         }
     } catch (error) {
-        errorElement.textContent = 'Network error. Please try again.';
-        console.error('Admin login error:', error);
+        console.error('Error getting stats:', error);
     }
-}
-
-// Hide auth modal
-function hideAuthModal() {
-    const authModal = document.getElementById('authModal');
-    if (authModal) {
-        authModal.style.display = 'none';
-    }
-}
-
-// Continue as guest
-function continueAsGuest() {
-    hideAuthModal();
-    showToast('Welcome! You can vote without registration.', 'success');
 }
 
 // Show toast notification
@@ -415,15 +413,45 @@ function showToast(message, type = 'info') {
     }, 3000);
 }
 
-// Check if user is admin
-function checkAdminStatus() {
-    const adminToken = localStorage.getItem('adminToken');
-    const adminUser = localStorage.getItem('adminUser');
-    
-    if (adminToken && adminUser) {
-        const adminLink = document.getElementById('adminLink');
-        if (adminLink) {
-            adminLink.style.display = 'block';
+// Reset all votes (for testing - only works if server allows)
+async function resetAllVotes() {
+    if (confirm('Reset all your votes? This will clear your voting history from this IP.')) {
+        try {
+            const response = await fetch('/api/reset-votes', {
+                method: 'POST'
+            });
+            
+            if (response.ok) {
+                // Reset local state
+                userVotes = {
+                    'Best Anime of 2025': null,
+                    'Best Animation Studio': null,
+                    'Best Voice Actor of 2025': null,
+                    'Most Anticipated Anime of 2025': null
+                };
+                
+                hasVotedCache = {};
+                
+                // Reset UI
+                document.querySelectorAll('.category-status').forEach(status => {
+                    status.textContent = 'Not Voted';
+                    status.className = 'category-status';
+                });
+                
+                document.querySelectorAll('.vote-btn').forEach(btn => {
+                    btn.disabled = false;
+                    btn.innerHTML = '<i class="fas fa-vote-yea"></i> Vote Now';
+                    btn.classList.remove('disabled');
+                });
+                
+                updateProgress();
+                await checkAllVotingStatus();
+                showToast('All votes reset! You can vote again.', 'success');
+            } else {
+                showToast('Cannot reset votes', 'error');
+            }
+        } catch (error) {
+            showToast('Error resetting votes', 'error');
         }
     }
 }
@@ -431,7 +459,11 @@ function checkAdminStatus() {
 // Initialize on page load
 document.addEventListener('DOMContentLoaded', function() {
     initApp();
-    checkAdminStatus();
+    
+    // Get stats
+    setTimeout(() => {
+        getVotingStats();
+    }, 1000);
     
     // Close modals when clicking outside
     const confirmModal = document.getElementById('confirmModal');
@@ -442,36 +474,13 @@ document.addEventListener('DOMContentLoaded', function() {
             confirmModal.style.display = 'none';
         }
         if (event.target === authModal) {
-            hideAuthModal();
+            authModal.style.display = 'none';
         }
     };
     
     // Auto-refresh results every 30 seconds
     setInterval(loadLiveResults, 30000);
     
-    // Setup admin login button
-    const adminLoginBtn = document.getElementById('adminLoginBtn');
-    if (adminLoginBtn) {
-        adminLoginBtn.addEventListener('click', function() {
-            if (authModal) {
-                authModal.style.display = 'flex';
-            }
-        });
-    }
-    
-    // Setup admin login form
-    const adminLoginButton = document.getElementById('adminLoginButton');
-    if (adminLoginButton) {
-        adminLoginButton.addEventListener('click', adminLogin);
-    }
-    
-    // Allow Enter key in admin login form
-    const loginPassword = document.getElementById('loginPassword');
-    if (loginPassword) {
-        loginPassword.addEventListener('keypress', function(e) {
-            if (e.key === 'Enter') {
-                adminLogin();
-            }
-        });
-    }
+    // Auto-check voting status every minute
+    setInterval(checkAllVotingStatus, 60000);
 });
