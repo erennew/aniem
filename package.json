@@ -20,3 +20,10 @@
     "node": ">=18.0.0"
   }
 }
+{
+  "scripts": {
+    "start": "node server.js",
+    "build": "echo 'No build step required'",
+    "vercel-build": "echo 'Static files ready'"
+  }
+}
