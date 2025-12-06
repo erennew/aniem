@@ -12,10 +12,27 @@ const app = express();
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 app.use(cors({
-    origin: ['https://aniem-9n8sxeckl-erennews-projects.vercel.app', 'https://aniem-ashen.vercel.app'],
+    origin: function(origin, callback) {
+        // Allow requests with no origin (like mobile apps or curl requests)
+        if (!origin) return callback(null, true);
+        
+        const allowedOrigins = [
+            'https://aniem-9n8sxeckl-erennews-projects.vercel.app',
+            'https://aniem-ashen.vercel.app',
+            'https://aniem-git-main-erennews-projects.vercel.app',
+            'https://aniem.vercel.app',
+            'http://localhost:3000',
+            'http://localhost:3001'
+        ];
+        
+        if (allowedOrigins.includes(origin) || origin.includes('vercel.app')) {
+            return callback(null, true);
+        }
+        
+        callback(new Error('Not allowed by CORS'));
+    },
     credentials: true
 }));
-
 // Serve static files from public folder
 app.use(express.static(path.join(__dirname, 'public')));
 
