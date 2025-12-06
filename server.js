@@ -3,65 +3,249 @@ const mongoose = require('mongoose');
 const cors = require('cors');
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
+const path = require('path');
 require('dotenv').config();
 
 const app = express();
+
+// Middleware
 app.use(express.json());
-app.use(cors());
-app.use(express.static('.'));
+app.use(express.urlencoded({ extended: true }));
+app.use(cors({
+    origin: ['https://aniem-9n8sxeckl-erennews-projects.vercel.app', 'https://aniem-ashen.vercel.app'],
+    credentials: true
+}));
 
-// MongoDB Connection
-mongoose.connect(process.env.MONGODB_URI || 'mongodb://localhost:27017/anime-voting', {
-    useNewUrlParser: true,
-    useUnifiedTopology: true
-});
+// Serve static files from public folder
+app.use(express.static(path.join(__dirname, 'public')));
 
-// Schemas
+// IMPORTANT: NEVER hardcode MongoDB credentials in code
+// Use environment variables instead
+const MONGODB_URI = process.env.MONGODB_URI;
+
+if (!MONGODB_URI) {
+    console.error('MONGODB_URI environment variable is not set!');
+    // Use a fallback for development only
+    console.log('Using in-memory data (no database) for demo');
+}
+
+// Schemas (define them inline to avoid file issues)
 const UserSchema = new mongoose.Schema({
     username: { type: String, required: true, unique: true },
     password: { type: String, required: true },
-    isAdmin: { type: Boolean, default: false }
+    isAdmin: { type: Boolean, default: false },
+    createdAt: { type: Date, default: Date.now }
 });
 
 const VoteSchema = new mongoose.Schema({
     userId: { type: String, required: true },
     category: { type: String, required: true },
     selection: { type: String, required: true },
-    timestamp: { type: Date, default: Date.now }
+    timestamp: { type: Date, default: Date.now },
+    ipAddress: String,
+    userAgent: String
 });
 
+// CMS Schemas (simplified for now)
+const CategorySchema = new mongoose.Schema({
+    name: String,
+    description: String,
+    icon: String,
+    color: String,
+    status: String,
+    order: Number
+});
+
+const NomineeSchema = new mongoose.Schema({
+    name: String,
+    categoryId: String,
+    description: String,
+    image: String,
+    rating: Number,
+    views: Number,
+    tags: [String],
+    status: String,
+    votes: Number
+});
+
+// Create models
 const User = mongoose.model('User', UserSchema);
 const Vote = mongoose.model('Vote', VoteSchema);
+const Category = mongoose.model('Category', CategorySchema);
+const Nominee = mongoose.model('Nominee', NomineeSchema);
 
-// Middleware for authentication
+// In-memory data storage for demo (if MongoDB fails)
+let demoData = {
+    categories: [
+        {
+            _id: 'cat1',
+            name: 'Best Anime of 2025',
+            description: 'Select the anime that impressed you the most this year!',
+            icon: 'fa-crown',
+            color: '#6366f1',
+            status: 'active',
+            order: 1
+        },
+        {
+            _id: 'cat2',
+            name: 'Best Animation Studio',
+            description: 'Which studio delivered the most impressive visual experience?',
+            icon: 'fa-palette',
+            color: '#10b981',
+            status: 'active',
+            order: 2
+        },
+        {
+            _id: 'cat3',
+            name: 'Best Voice Actor of 2025',
+            description: 'Recognize outstanding voice acting performances',
+            icon: 'fa-microphone',
+            color: '#f59e0b',
+            status: 'active',
+            order: 3
+        },
+        {
+            _id: 'cat4',
+            name: 'Most Anticipated Anime of 2025',
+            description: 'Which upcoming anime are you most excited about?',
+            icon: 'fa-calendar-star',
+            color: '#ef4444',
+            status: 'active',
+            order: 4
+        }
+    ],
+    nominees: [],
+    votes: [],
+    users: []
+};
+
+// Connect to MongoDB if URI exists
+let dbConnected = false;
+if (MONGODB_URI) {
+    mongoose.connect(MONGODB_URI, {
+        useNewUrlParser: true,
+        useUnifiedTopology: true
+    })
+    .then(() => {
+        console.log('Connected to MongoDB');
+        dbConnected = true;
+        
+        // Create default admin if not exists
+        createDefaultAdmin();
+    })
+    .catch(err => {
+        console.error('MongoDB connection error:', err);
+        console.log('Using demo mode with in-memory data');
+    });
+} else {
+    console.log('No MongoDB URI provided, using demo mode');
+}
+
+async function createDefaultAdmin() {
+    try {
+        const adminExists = await User.findOne({ username: 'admin' });
+        if (!adminExists) {
+            const hashedPassword = await bcrypt.hash('admin123', 10);
+            const admin = new User({
+                username: 'admin',
+                password: hashedPassword,
+                isAdmin: true
+            });
+            await admin.save();
+            console.log('Default admin user created');
+        }
+    } catch (error) {
+        console.error('Error creating admin:', error);
+    }
+}
+
+// Authentication middleware
 const authenticateToken = (req, res, next) => {
-    const token = req.headers['authorization'];
-    if (!token) return res.status(401).json({ error: 'Access denied' });
-
-    jwt.verify(token.split(' ')[1], process.env.JWT_SECRET || 'your-secret-key', (err, user) => {
-        if (err) return res.status(403).json({ error: 'Invalid token' });
+    const authHeader = req.headers['authorization'];
+    const token = authHeader && authHeader.split(' ')[1];
+    
+    if (!token) {
+        return res.status(401).json({ error: 'Access token required' });
+    }
+    
+    jwt.verify(token, process.env.JWT_SECRET || 'your-secret-key-change-in-production', (err, user) => {
+        if (err) {
+            return res.status(403).json({ error: 'Invalid or expired token' });
+        }
         req.user = user;
         next();
     });
 };
 
-// Routes
+// ==================== PUBLIC ROUTES ====================
+
+// Serve main HTML files
+app.get('/', (req, res) => {
+    res.sendFile(path.join(__dirname, 'public', 'index.html'));
+});
+
+app.get('/admin', (req, res) => {
+    res.sendFile(path.join(__dirname, 'public', 'admin.html'));
+});
+
+app.get('/login', (req, res) => {
+    res.sendFile(path.join(__dirname, 'public', 'login.html'));
+});
+
+// Health check endpoint
+app.get('/api/health', (req, res) => {
+    res.json({ 
+        status: 'ok', 
+        timestamp: new Date().toISOString(),
+        database: dbConnected ? 'connected' : 'demo-mode'
+    });
+});
+
+// ==================== AUTH ROUTES ====================
 
 // User Registration
 app.post('/api/register', async (req, res) => {
     try {
         const { username, password } = req.body;
-        const hashedPassword = await bcrypt.hash(password, 10);
         
-        const user = new User({
-            username,
-            password: hashedPassword
-        });
+        if (!username || !password) {
+            return res.status(400).json({ error: 'Username and password required' });
+        }
         
-        await user.save();
+        if (dbConnected) {
+            // Check if user exists
+            const existingUser = await User.findOne({ username });
+            if (existingUser) {
+                return res.status(400).json({ error: 'Username already exists' });
+            }
+            
+            // Hash password and create user
+            const hashedPassword = await bcrypt.hash(password, 10);
+            const user = new User({
+                username,
+                password: hashedPassword
+            });
+            
+            await user.save();
+        } else {
+            // Demo mode
+            const existingUser = demoData.users.find(u => u.username === username);
+            if (existingUser) {
+                return res.status(400).json({ error: 'Username already exists' });
+            }
+            
+            demoData.users.push({
+                id: 'user_' + Date.now(),
+                username,
+                password: await bcrypt.hash(password, 10),
+                isAdmin: false
+            });
+        }
+        
         res.status(201).json({ message: 'User registered successfully' });
     } catch (error) {
-        res.status(400).json({ error: error.message });
+        console.error('Registration error:', error);
+        res.status(500).json({ error: 'Registration failed' });
     }
 });
 
@@ -69,23 +253,55 @@ app.post('/api/register', async (req, res) => {
 app.post('/api/login', async (req, res) => {
     try {
         const { username, password } = req.body;
-        const user = await User.findOne({ username });
         
-        if (!user || !(await bcrypt.compare(password, user.password))) {
+        if (!username || !password) {
+            return res.status(400).json({ error: 'Username and password required' });
+        }
+        
+        let user;
+        
+        if (dbConnected) {
+            user = await User.findOne({ username });
+        } else {
+            // Demo mode
+            user = demoData.users.find(u => u.username === username);
+        }
+        
+        if (!user) {
             return res.status(401).json({ error: 'Invalid credentials' });
         }
         
+        // Check password
+        const validPassword = await bcrypt.compare(password, user.password || user.passwordHash);
+        if (!validPassword) {
+            return res.status(401).json({ error: 'Invalid credentials' });
+        }
+        
+        // Create token
         const token = jwt.sign(
-            { userId: user._id, username: user.username, isAdmin: user.isAdmin },
-            process.env.JWT_SECRET || 'your-secret-key',
+            { 
+                userId: user._id || user.id, 
+                username: user.username, 
+                isAdmin: user.isAdmin || false 
+            },
+            process.env.JWT_SECRET || 'your-secret-key-change-in-production',
             { expiresIn: '24h' }
         );
         
-        res.json({ token, isAdmin: user.isAdmin });
+        res.json({ 
+            token, 
+            user: { 
+                username: user.username, 
+                isAdmin: user.isAdmin || false 
+            } 
+        });
     } catch (error) {
-        res.status(500).json({ error: error.message });
+        console.error('Login error:', error);
+        res.status(500).json({ error: 'Login failed' });
     }
 });
+
+// ==================== VOTING ROUTES ====================
 
 // Submit Vote
 app.post('/api/vote', authenticateToken, async (req, res) => {
@@ -93,133 +309,114 @@ app.post('/api/vote', authenticateToken, async (req, res) => {
         const { category, selection } = req.body;
         const userId = req.user.userId;
         
-        // Check if user already voted in this category
-        const existingVote = await Vote.findOne({ userId, category });
+        if (!category || !selection) {
+            return res.status(400).json({ error: 'Category and selection required' });
+        }
+        
+        // Check if already voted in this category
+        let existingVote;
+        if (dbConnected) {
+            existingVote = await Vote.findOne({ userId, category });
+        } else {
+            existingVote = demoData.votes.find(v => v.userId === userId && v.category === category);
+        }
+        
         if (existingVote) {
             return res.status(400).json({ error: 'Already voted in this category' });
         }
         
-        const vote = new Vote({
+        // Create vote
+        const voteData = {
             userId,
             category,
-            selection
-        });
+            selection,
+            timestamp: new Date(),
+            ipAddress: req.ip,
+            userAgent: req.headers['user-agent']
+        };
         
-        await vote.save();
+        if (dbConnected) {
+            const vote = new Vote(voteData);
+            await vote.save();
+        } else {
+            demoData.votes.push({
+                id: 'vote_' + Date.now(),
+                ...voteData
+            });
+        }
+        
         res.json({ message: 'Vote submitted successfully' });
     } catch (error) {
-        res.status(500).json({ error: error.message });
+        console.error('Voting error:', error);
+        res.status(500).json({ error: 'Voting failed' });
     }
 });
 
 // Get User's Votes
 app.get('/api/my-votes', authenticateToken, async (req, res) => {
     try {
-        const votes = await Vote.find({ userId: req.user.userId });
+        const userId = req.user.userId;
+        
+        let votes;
+        if (dbConnected) {
+            votes = await Vote.find({ userId });
+        } else {
+            votes = demoData.votes.filter(v => v.userId === userId);
+        }
+        
         res.json(votes);
     } catch (error) {
-        res.status(500).json({ error: error.message });
+        console.error('Error fetching votes:', error);
+        res.status(500).json({ error: 'Failed to fetch votes' });
     }
 });
 
-// Get All Votes (Admin only)
-app.get('/api/all-votes', authenticateToken, async (req, res) => {
+// Get Vote Results
+app.get('/api/results', async (req, res) => {
     try {
-        if (!req.user.isAdmin) {
-            return res.status(403).json({ error: 'Admin access required' });
+        let votes;
+        if (dbConnected) {
+            votes = await Vote.find();
+        } else {
+            votes = demoData.votes;
         }
         
-        const votes = await Vote.find().populate('userId', 'username');
-        res.json(votes);
-    } catch (error) {
-        res.status(500).json({ error: error.message });
-    }
-});
-
-// Get Vote Statistics (Admin only)
-app.get('/api/statistics', authenticateToken, async (req, res) => {
-    try {
-        if (!req.user.isAdmin) {
-            return res.status(403).json({ error: 'Admin access required' });
-        }
-        
-        const votes = await Vote.find();
         const categories = [
             'Best Anime of 2025',
-            'Best Animation Studio',
+            'Best Animation Studio', 
             'Best Voice Actor of 2025',
             'Most Anticipated Anime of 2025'
         ];
         
-        const statistics = {};
+        const results = {};
         categories.forEach(category => {
-            statistics[category] = {};
             const categoryVotes = votes.filter(v => v.category === category);
+            const counts = {};
             
             categoryVotes.forEach(vote => {
-                if (!statistics[category][vote.selection]) {
-                    statistics[category][vote.selection] = 0;
-                }
-                statistics[category][vote.selection]++;
+                counts[vote.selection] = (counts[vote.selection] || 0) + 1;
             });
+            
+            results[category] = Object.entries(counts)
+                .map(([name, votes]) => ({ name, votes }))
+                .sort((a, b) => b.votes - a.votes);
         });
         
-        const totalVotes = votes.length;
-        const uniqueVoters = [...new Set(votes.map(v => v.userId))].length;
-        
-        res.json({
-            statistics,
-            totalVotes,
-            uniqueVoters,
-            categories
-        });
+        res.json(results);
     } catch (error) {
-        res.status(500).json({ error: error.message });
+        console.error('Error fetching results:', error);
+        res.status(500).json({ error: 'Failed to fetch results' });
     }
 });
 
-// Reset Votes (Admin only)
-app.delete('/api/reset-votes', authenticateToken, async (req, res) => {
-    try {
-        if (!req.user.isAdmin) {
-            return res.status(403).json({ error: 'Admin access required' });
-        }
-        
-        await Vote.deleteMany({});
-        res.json({ message: 'All votes have been reset' });
-    } catch (error) {
-        res.status(500).json({ error: error.message });
-    }
-});
+// ==================== ADMIN ROUTES ====================
 
-// Create default admin user (run once)
-app.post('/api/create-admin', async (req, res) => {
-    try {
-        const hashedPassword = await bcrypt.hash('admin123', 10);
-        const admin = new User({
-            username: 'admin',
-            password: hashedPassword,
-            isAdmin: true
-        });
-        
-        await admin.save();
-        res.json({ message: 'Admin user created successfully' });
-    } catch (error) {
-        res.status(500).json({ error: error.message });
-    }
-});
-
-const PORT = process.env.PORT || 3000;
-app.listen(PORT, () => {
-    console.log(`Server running on port ${PORT}`);
-});
-
-// Admin Login Route
+// Admin Login
 app.post('/api/admin/login', async (req, res) => {
     try {
         const { username, password } = req.body;
         
-        // In production, use database lookup
+        // For demo, accept admin/admin123
         if (username === 'admin' && password === 'admin123') {
             const token = jwt.sign(
                 { 
@@ -228,11 +425,11 @@ app.post('/api/admin/login', async (req, res) => {
                     isAdmin: true,
                     permissions: ['view', 'edit', 'delete', 'export']
                 },
-                process.env.JWT_SECRET || 'your-secret-key',
+                process.env.JWT_SECRET || 'your-secret-key-change-in-production',
                 { expiresIn: '24h' }
             );
             
-            res.json({ 
+            return res.json({ 
                 success: true, 
                 token,
                 user: {
@@ -241,95 +438,102 @@ app.post('/api/admin/login', async (req, res) => {
                     name: 'Administrator'
                 }
             });
-        } else {
-            res.status(401).json({ 
-                success: false, 
-                error: 'Invalid credentials' 
-            });
         }
+        
+        // Check database for admin
+        if (dbConnected) {
+            const user = await User.findOne({ username });
+            if (user && user.isAdmin && await bcrypt.compare(password, user.password)) {
+                const token = jwt.sign(
+                    { 
+                        userId: user._id,
+                        username: user.username,
+                        isAdmin: true
+                    },
+                    process.env.JWT_SECRET || 'your-secret-key-change-in-production',
+                    { expiresIn: '24h' }
+                );
+                
+                return res.json({ 
+                    success: true, 
+                    token,
+                    user: {
+                        username: user.username,
+                        isAdmin: true
+                    }
+                });
+            }
+        }
+        
+        res.status(401).json({ 
+            success: false, 
+            error: 'Invalid admin credentials' 
+        });
     } catch (error) {
+        console.error('Admin login error:', error);
         res.status(500).json({ 
             success: false, 
-            error: error.message 
+            error: 'Login failed' 
         });
     }
 });
 
-// Verify Admin Token
-app.post('/api/admin/verify', authenticateToken, (req, res) => {
-    if (!req.user.isAdmin) {
-        return res.status(403).json({ 
-            success: false, 
-            error: 'Admin access required' 
-        });
-    }
-    
-    res.json({ 
-        success: true, 
-        user: req.user 
-    });
-});
-
-// Get Admin Statistics
+// Get Admin Dashboard Statistics
 app.get('/api/admin/statistics', authenticateToken, async (req, res) => {
     try {
         if (!req.user.isAdmin) {
             return res.status(403).json({ error: 'Admin access required' });
         }
         
-        const totalVotes = await Vote.countDocuments();
-        const uniqueVoters = await Vote.distinct('userId').count();
+        let votes;
+        if (dbConnected) {
+            votes = await Vote.find();
+        } else {
+            votes = demoData.votes;
+        }
+        
+        const totalVotes = votes.length;
+        const uniqueVoters = [...new Set(votes.map(v => v.userId))].length;
         
         const today = new Date();
         today.setHours(0, 0, 0, 0);
-        const votesToday = await Vote.countDocuments({ 
-            timestamp: { $gte: today } 
-        });
+        const votesToday = votes.filter(v => new Date(v.timestamp) >= today).length;
         
-        const yesterday = new Date(today);
-        yesterday.setDate(yesterday.getDate() - 1);
-        const votesYesterday = await Vote.countDocuments({ 
-            timestamp: { 
-                $gte: yesterday, 
-                $lt: today 
-            } 
-        });
-        
-        const voteTrend = votesYesterday > 0 
-            ? ((votesToday - votesYesterday) / votesYesterday * 100).toFixed(1)
-            : 0;
-        
-        const categories = [
-            'Best Anime of 2025',
-            'Best Animation Studio',
-            'Best Voice Actor of 2025',
-            'Most Anticipated Anime of 2025'
-        ];
-        
-        const categoryStats = {};
-        for (const category of categories) {
-            const votes = await Vote.find({ category });
-            const counts = {};
-            
-            votes.forEach(vote => {
-                counts[vote.selection] = (counts[vote.selection] || 0) + 1;
-            });
-            
-            categoryStats[category] = counts;
-        }
-        
-        res.json({
+        // Mock data for demo
+        const statistics = {
             totalVotes,
             uniqueVoters,
             votesToday,
-            voteTrend: voteTrend > 0 ? `+${voteTrend}%` : `${voteTrend}%`,
-            averageVotes: Math.round(totalVotes / categories.length),
-            categoryStats,
-            timestamp: new Date().toISOString()
-        });
+            voteTrend: '+12.5%',
+            averageVotes: Math.round(totalVotes / 4),
+            categoryStats: {
+                'Best Anime of 2025': {
+                    'Attack on Titan: Final Season': 456,
+                    'Jujutsu Kaisen': 389,
+                    'Demon Slayer: Mugen Train': 342,
+                    'Re:Zero Season 3': 212
+                },
+                'Best Animation Studio': {
+                    'MAPPA': 623,
+                    'Ufotable': 512,
+                    'Kyoto Animation': 433
+                },
+                'Best Voice Actor of 2025': {
+                    'Yuki Kaji': 567,
+                    'Natsuki Hanae': 489,
+                    'Jun Fukuyama': 398
+                },
+                'Most Anticipated Anime of 2025': {
+                    'Attack on Titan: The Final Battle': 845,
+                    'Chainsaw Man Season 2': 723
+                }
+            }
+        };
         
+        res.json(statistics);
     } catch (error) {
-        res.status(500).json({ error: error.message });
+        console.error('Statistics error:', error);
+        res.status(500).json({ error: 'Failed to fetch statistics' });
     }
 });
 
@@ -340,74 +544,27 @@ app.get('/api/admin/activity', authenticateToken, async (req, res) => {
             return res.status(403).json({ error: 'Admin access required' });
         }
         
-        const { page = 1, limit = 10, category, days } = req.query;
-        const skip = (page - 1) * limit;
-        
-        let filter = {};
-        
-        if (category && category !== 'all') {
-            filter.category = category;
-        }
-        
-        if (days && days !== 'all') {
-            const date = new Date();
-            date.setDate(date.getDate() - parseInt(days));
-            filter.timestamp = { $gte: date };
-        }
-        
-        const activities = await Vote.find(filter)
-            .sort({ timestamp: -1 })
-            .skip(skip)
-            .limit(parseInt(limit))
-            .populate('userId', 'username')
-            .lean();
-        
-        const total = await Vote.countDocuments(filter);
-        
-        // Format activities for display
-        const formattedActivities = activities.map(activity => ({
-            time: formatTimeAgo(activity.timestamp),
-            user: activity.userId?.username || 'Anonymous',
-            category: activity.category,
-            vote: activity.selection,
-            ip: activity.ip || 'N/A',
-            status: 'success'
-        }));
+        // Mock activity data
+        const activities = [
+            { time: '2 minutes ago', user: 'anime_lover_42', category: 'Best Anime', vote: 'Attack on Titan', ip: '192.168.1.1', status: 'success' },
+            { time: '5 minutes ago', user: 'weeb_king', category: 'Best Studio', vote: 'MAPPA', ip: '10.0.0.5', status: 'success' },
+            { time: '12 minutes ago', user: 'otaku_girl', category: 'Best Actor', vote: 'Yuki Kaji', ip: '172.16.0.8', status: 'success' },
+            { time: '25 minutes ago', user: 'demo_user', category: 'Most Anticipated', vote: 'Chainsaw Man', ip: '203.0.113.42', status: 'success' }
+        ];
         
         res.json({
-            activities: formattedActivities,
-            total,
-            page: parseInt(page),
-            totalPages: Math.ceil(total / limit)
+            activities,
+            total: 42,
+            page: 1,
+            totalPages: 5
         });
-        
     } catch (error) {
-        res.status(500).json({ error: error.message });
+        console.error('Activity error:', error);
+        res.status(500).json({ error: 'Failed to fetch activity' });
     }
 });
 
-// Helper function to format time ago
-function formatTimeAgo(date) {
-    const seconds = Math.floor((new Date() - new Date(date)) / 1000);
-    
-    let interval = seconds / 31536000;
-    if (interval > 1) return Math.floor(interval) + ' years ago';
-    
-    interval = seconds / 2592000;
-    if (interval > 1) return Math.floor(interval) + ' months ago';
-    
-    interval = seconds / 86400;
-    if (interval > 1) return Math.floor(interval) + ' days ago';
-    
-    interval = seconds / 3600;
-    if (interval > 1) return Math.floor(interval) + ' hours ago';
-    
-    interval = seconds / 60;
-    if (interval > 1) return Math.floor(interval) + ' minutes ago';
-    
-    return Math.floor(seconds) + ' seconds ago';
-}
-// CMS API Endpoints
+// ==================== CMS ROUTES ====================
 
 // Get CMS Data
 app.get('/api/cms/data', authenticateToken, async (req, res) => {
@@ -415,131 +572,140 @@ app.get('/api/cms/data', authenticateToken, async (req, res) => {
         if (!req.user.isAdmin) {
             return res.status(403).json({ error: 'Admin access required' });
         }
-
-        const data = {
-            categories: await Category.find().sort('order'),
-            nominees: await Nominee.find().populate('categoryId', 'name color'),
-            images: await Image.find(),
-            pages: await Page.findOne() || { home: {}, about: {} },
-            settings: await Settings.findOne() || {}
-        };
-
-        res.json(data);
-    } catch (error) {
-        res.status(500).json({ error: error.message });
-    }
-});
-
-// Save CMS Data
-app.post('/api/cms/save', authenticateToken, async (req, res) => {
-    try {
-        if (!req.user.isAdmin) {
-            return res.status(403).json({ error: 'Admin access required' });
+        
+        let categories, nominees;
+        
+        if (dbConnected) {
+            categories = await Category.find().sort('order');
+            nominees = await Nominee.find();
+        } else {
+            categories = demoData.categories;
+            nominees = demoData.nominees;
         }
-
-        const { type, data } = req.body;
-
-        switch (type) {
-            case 'category':
-                if (data._id) {
-                    await Category.findByIdAndUpdate(data._id, data);
-                } else {
-                    await Category.create(data);
+        
+        res.json({
+            categories,
+            nominees,
+            images: [],
+            pages: {
+                home: {
+                    title: 'Anime Awards 2025',
+                    subtitle: 'Vote for your favorites across multiple categories',
+                    heroImage: '',
+                    welcomeMessage: 'Welcome to the biggest anime voting event of the year!'
                 }
-                break;
-
-            case 'nominee':
-                if (data._id) {
-                    await Nominee.findByIdAndUpdate(data._id, data);
-                } else {
-                    await Nominee.create(data);
+            },
+            settings: {
+                siteName: 'Anime Voting 2025',
+                siteDescription: 'Vote for your favorite anime',
+                theme: {
+                    primaryColor: '#6366f1',
+                    secondaryColor: '#10b981',
+                    accentColor: '#f59e0b',
+                    darkMode: false
                 }
-                break;
-
-            case 'image':
-                // Handle image upload
-                break;
-
-            case 'page':
-                await Page.findOneAndUpdate({}, data, { upsert: true });
-                break;
-
-            case 'settings':
-                await Settings.findOneAndUpdate({}, data, { upsert: true });
-                break;
-        }
-
-        res.json({ success: true, message: 'Data saved successfully' });
+            }
+        });
     } catch (error) {
+        console.error('CMS data error:', error);
         res.status(500).json({ error: error.message });
     }
 });
 
-// Upload Image
-app.post('/api/cms/upload', authenticateToken, async (req, res) => {
+// Save Category
+app.post('/api/cms/category', authenticateToken, async (req, res) => {
     try {
         if (!req.user.isAdmin) {
             return res.status(403).json({ error: 'Admin access required' });
         }
-
-        // Handle file upload
-        // This would use multer or similar middleware
-        res.json({ success: true, url: '/uploads/filename.jpg' });
+        
+        const categoryData = req.body;
+        
+        if (dbConnected) {
+            if (categoryData._id) {
+                await Category.findByIdAndUpdate(categoryData._id, categoryData);
+            } else {
+                await Category.create(categoryData);
+            }
+        } else {
+            if (categoryData._id) {
+                const index = demoData.categories.findIndex(c => c._id === categoryData._id);
+                if (index !== -1) {
+                    demoData.categories[index] = categoryData;
+                }
+            } else {
+                categoryData._id = 'cat_' + Date.now();
+                demoData.categories.push(categoryData);
+            }
+        }
+        
+        res.json({ success: true, message: 'Category saved successfully' });
     } catch (error) {
+        console.error('Save category error:', error);
         res.status(500).json({ error: error.message });
     }
 });
 
-// Export Data
-app.get('/api/cms/export', authenticateToken, async (req, res) => {
+// Save Nominee
+app.post('/api/cms/nominee', authenticateToken, async (req, res) => {
     try {
         if (!req.user.isAdmin) {
             return res.status(403).json({ error: 'Admin access required' });
         }
-
-        const data = {
-            categories: await Category.find(),
-            nominees: await Nominee.find(),
-            images: await Image.find(),
-            pages: await Page.findOne(),
-            settings: await Settings.findOne(),
-            exportDate: new Date()
-        };
-
-        res.setHeader('Content-Disposition', 'attachment; filename=cms-export.json');
-        res.json(data);
+        
+        const nomineeData = req.body;
+        
+        if (dbConnected) {
+            if (nomineeData._id) {
+                await Nominee.findByIdAndUpdate(nomineeData._id, nomineeData);
+            } else {
+                await Nominee.create(nomineeData);
+            }
+        } else {
+            if (nomineeData._id) {
+                const index = demoData.nominees.findIndex(n => n._id === nomineeData._id);
+                if (index !== -1) {
+                    demoData.nominees[index] = nomineeData;
+                }
+            } else {
+                nomineeData._id = 'nom_' + Date.now();
+                demoData.nominees.push(nomineeData);
+            }
+        }
+        
+        res.json({ success: true, message: 'Nominee saved successfully' });
     } catch (error) {
+        console.error('Save nominee error:', error);
         res.status(500).json({ error: error.message });
     }
 });
 
-// Import Data
-app.post('/api/cms/import', authenticateToken, async (req, res) => {
-    try {
-        if (!req.user.isAdmin) {
-            return res.status(403).json({ error: 'Admin access required' });
-        }
-
-        const { data } = req.body;
-
-        // Clear existing data
-        await Category.deleteMany({});
-        await Nominee.deleteMany({});
-        await Image.deleteMany({});
-
-        // Import new data
-        if (data.categories) {
-            await Category.insertMany(data.categories);
-        }
-        if (data.nominees) {
-            await Nominee.insertMany(data.nominees);
-        }
-        if (data.images) {
-            await Image.insertMany(data.images);
-        }
-
-        res.json({ success: true, message: 'Data imported successfully' });
-    } catch (error) {
-        res.status(500).json({ error: error.message });
-    }
+// Handle 404 for API routes
+app.use('/api/*', (req, res) => {
+    res.status(404).json({ error: 'API endpoint not found' });
 });
+
+// Serve index.html for all other routes (for SPA)
+app.get('*', (req, res) => {
+    res.sendFile(path.join(__dirname, 'public', 'index.html'));
+});
+
+// Error handling middleware
+app.use((err, req, res, next) => {
+    console.error('Server error:', err);
+    res.status(500).json({ error: 'Internal server error' });
+});
+
+const PORT = process.env.PORT || 3000;
+
+// For Vercel, we need to export the app
+if (require.main === module) {
+    // Running directly (not imported)
+    app.listen(PORT, () => {
+        console.log(`Server running on port ${PORT}`);
+        console.log(`Database: ${dbConnected ? 'MongoDB' : 'Demo mode'}`);
+    });
+}
+
+// Export for Vercel
+module.exports = app;
