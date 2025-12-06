@@ -7,15 +7,161 @@
     <link rel="stylesheet" href="/css/styles.css">
     <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@300;400;500;700;900&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <style>
+        /* Quick fixes for admin login button */
+        .admin-login-btn {
+            position: absolute;
+            top: 20px;
+            right: 20px;
+            background: rgba(99, 102, 241, 0.9);
+            border: none;
+            color: white;
+            padding: 10px 20px;
+            border-radius: 8px;
+            cursor: pointer;
+            font-size: 0.9rem;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            transition: all 0.3s;
+            z-index: 100;
+        }
+        
+        .admin-login-btn:hover {
+            background: #4f46e5;
+            transform: translateY(-2px);
+            box-shadow: 0 5px 15px rgba(99, 102, 241, 0.3);
+        }
+        
+        .auth-modal {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0, 0, 0, 0.8);
+            z-index: 1000;
+            justify-content: center;
+            align-items: center;
+        }
+        
+        .auth-content {
+            background: white;
+            border-radius: 15px;
+            padding: 40px;
+            width: 90%;
+            max-width: 400px;
+            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+            text-align: center;
+        }
+        
+        .auth-content h2 {
+            color: #333;
+            margin-bottom: 10px;
+        }
+        
+        .auth-subtitle {
+            color: #666;
+            margin-bottom: 25px;
+            font-size: 0.9rem;
+        }
+        
+        .form-group input {
+            width: 100%;
+            padding: 12px 15px;
+            margin-bottom: 15px;
+            border: 2px solid #e0e0e0;
+            border-radius: 8px;
+            font-size: 1rem;
+        }
+        
+        .form-group input:focus {
+            outline: none;
+            border-color: #6366f1;
+        }
+        
+        .auth-btn {
+            width: 100%;
+            padding: 14px;
+            background: linear-gradient(135deg, #6366f1, #4f46e5);
+            color: white;
+            border: none;
+            border-radius: 8px;
+            font-size: 1rem;
+            font-weight: 600;
+            cursor: pointer;
+            margin-bottom: 15px;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            gap: 10px;
+        }
+        
+        .auth-cancel-btn {
+            width: 100%;
+            padding: 12px;
+            background: #f1f5f9;
+            color: #64748b;
+            border: none;
+            border-radius: 8px;
+            font-size: 1rem;
+            cursor: pointer;
+            margin-bottom: 20px;
+        }
+        
+        .auth-footer {
+            border-top: 1px solid #e5e7eb;
+            padding-top: 20px;
+        }
+        
+        .auth-footer p {
+            color: #666;
+            margin-bottom: 15px;
+            font-size: 0.9rem;
+        }
+        
+        .guest-btn {
+            width: 100%;
+            padding: 12px;
+            background: #10b981;
+            color: white;
+            border: none;
+            border-radius: 8px;
+            font-size: 1rem;
+            cursor: pointer;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            gap: 8px;
+        }
+        
+        .error-message {
+            color: #ef4444;
+            margin-top: 10px;
+            min-height: 20px;
+            font-size: 0.9rem;
+        }
+        
+        @media (max-width: 768px) {
+            .admin-login-btn {
+                position: fixed;
+                top: 10px;
+                right: 10px;
+                padding: 8px 15px;
+                font-size: 0.8rem;
+            }
+        }
+    </style>
 </head>
 <body>
-    <!-- Add this admin login button in your header/nav -->
+    <!-- Admin Login Button -->
     <button id="adminLoginBtn" class="admin-login-btn">
         <i class="fas fa-lock"></i> Admin Login
     </button>
     
-    <!-- Keep the auth modal but modify it to be admin-only -->
-    <div id="authModal" class="auth-modal" style="display: none;">
+    <!-- Admin Login Modal -->
+    <div id="authModal" class="auth-modal">
         <div class="auth-content">
             <h2><i class="fas fa-lock"></i> Admin Login</h2>
             <p class="auth-subtitle">Only for administrators</p>
@@ -23,7 +169,7 @@
             <div class="form-group">
                 <input type="text" id="loginUsername" placeholder="Admin Username" required>
                 <input type="password" id="loginPassword" placeholder="Admin Password" required>
-                <button onclick="adminLogin()" class="auth-btn">
+                <button id="adminLoginButton" class="auth-btn">
                     <i class="fas fa-sign-in-alt"></i> Login as Admin
                 </button>
                 <p id="loginError" class="error-message"></p>
@@ -35,26 +181,33 @@
             
             <div class="auth-footer">
                 <p>Regular users can vote without login!</p>
-                <button onclick="showAsGuest()" class="guest-btn">
+                <button onclick="continueAsGuest()" class="guest-btn">
                     <i class="fas fa-user"></i> Continue as Guest
                 </button>
             </div>
         </div>
     </div>
+
     <!-- Header Section -->
     <header class="header">
         <div class="header-container">
             <h1><i class="fas fa-vote-yea"></i> Anime Awards 2025</h1>
             <p class="subtitle">Vote for your favorites across multiple categories</p>
-            <div class="user-info" id="userInfo" style="display: none;">
-                <span id="usernameDisplay"></span>
-                <button onclick="logout()" class="logout-btn"><i class="fas fa-sign-out-alt"></i> Logout</button>
+            <div class="user-info" id="userInfo">
+                <span id="usernameDisplay">Guest User</span>
+                <button onclick="refreshVotes()" class="logout-btn">
+                    <i class="fas fa-redo"></i> Refresh
+                </button>
             </div>
         </div>
         <nav class="main-nav">
             <a href="#" class="nav-link active"><i class="fas fa-home"></i> Vote</a>
-            <a href="admin.html" class="nav-link" id="adminLink" style="display: none;"><i class="fas fa-chart-bar"></i> Admin</a>
-            <a href="#results" class="nav-link" onclick="showMyResults()"><i class="fas fa-poll"></i> My Votes</a>
+            <a href="admin.html" class="nav-link" id="adminLink" style="display: none;">
+                <i class="fas fa-chart-bar"></i> Admin Panel
+            </a>
+            <a href="#results" class="nav-link" onclick="showMyResults()">
+                <i class="fas fa-poll"></i> Results
+            </a>
         </nav>
     </header>
 
@@ -69,9 +222,9 @@
 
     <!-- Main Voting Container -->
     <main class="container">
-        <!-- User Info Panel -->
-        <div class="user-panel" id="userPanel" style="display: none;">
-            <h3><i class="fas fa-user-circle"></i> Voting Dashboard</h3>
+        <!-- Stats Panel -->
+        <div class="user-panel" id="userPanel">
+            <h3><i class="fas fa-chart-line"></i> Voting Dashboard</h3>
             <div class="user-stats">
                 <div class="stat-box">
                     <i class="fas fa-check-circle"></i>
@@ -84,7 +237,7 @@
                     <small>Pending</small>
                 </div>
                 <div class="stat-box">
-                    <i class="fas fa-trophy"></i>
+                    <i class="fas fa-users"></i>
                     <span id="totalVotesCount">0</span>
                     <small>Total Votes</small>
                 </div>
@@ -300,7 +453,7 @@
 
         <!-- Results Section -->
         <section class="results-section" id="results">
-            <h2><i class="fas fa-chart-bar"></i> My Voting Results</h2>
+            <h2><i class="fas fa-chart-bar"></i> Live Voting Results</h2>
             <div class="results-grid" id="myResults">
                 <!-- Results will be displayed here -->
             </div>
@@ -353,5 +506,132 @@
     </div>
 
     <script src="/js/script.js"></script>
+    <script>
+        // Quick fix for inline event handlers that might conflict
+        // Override the vote function if needed
+        window.vote = function(selection, category) {
+            if (typeof currentVote === 'object' && currentVote !== null) {
+                // Use the script.js vote function
+                currentVote = { selection, category };
+                
+                // Show confirmation modal
+                const modal = document.getElementById('confirmModal');
+                const message = document.getElementById('confirmMessage');
+                
+                message.textContent = `Are you sure you want to vote for "${selection}" in "${category}"?`;
+                modal.style.display = 'flex';
+            } else {
+                // Fallback if script.js not loaded
+                alert(`You voted for: ${selection} in ${category}`);
+            }
+        };
+        
+        // Admin login modal handlers
+        document.addEventListener('DOMContentLoaded', function() {
+            const adminLoginBtn = document.getElementById('adminLoginBtn');
+            const authModal = document.getElementById('authModal');
+            const adminLoginButton = document.getElementById('adminLoginButton');
+            
+            if (adminLoginBtn) {
+                adminLoginBtn.addEventListener('click', function() {
+                    authModal.style.display = 'flex';
+                });
+            }
+            
+            if (adminLoginButton) {
+                adminLoginButton.addEventListener('click', async function() {
+                    const username = document.getElementById('loginUsername').value;
+                    const password = document.getElementById('loginPassword').value;
+                    const errorElement = document.getElementById('loginError');
+                    
+                    errorElement.textContent = '';
+                    
+                    try {
+                        const response = await fetch('/api/admin/login', {
+                            method: 'POST',
+                            headers: {
+                                'Content-Type': 'application/json',
+                            },
+                            body: JSON.stringify({ username, password })
+                        });
+                        
+                        const data = await response.json();
+                        
+                        if (data.success) {
+                            localStorage.setItem('adminToken', data.token);
+                            localStorage.setItem('adminUser', JSON.stringify(data.user));
+                            
+                            // Show admin link
+                            const adminLink = document.getElementById('adminLink');
+                            if (adminLink) {
+                                adminLink.style.display = 'block';
+                            }
+                            
+                            showToast('Admin login successful!', 'success');
+                            hideAuthModal();
+                            
+                            // Redirect to admin page after 1 second
+                            setTimeout(() => {
+                                window.location.href = 'admin.html';
+                            }, 1000);
+                        } else {
+                            errorElement.textContent = data.error || 'Login failed';
+                        }
+                    } catch (error) {
+                        errorElement.textContent = 'Network error. Please try again.';
+                        console.error('Admin login error:', error);
+                    }
+                });
+            }
+            
+            // Close modal when clicking outside
+            window.onclick = function(event) {
+                if (event.target === authModal) {
+                    hideAuthModal();
+                }
+                if (event.target === document.getElementById('confirmModal')) {
+                    document.getElementById('confirmModal').style.display = 'none';
+                }
+            };
+            
+            // Allow Enter key in admin login form
+            document.getElementById('loginPassword').addEventListener('keypress', function(e) {
+                if (e.key === 'Enter') {
+                    adminLoginButton.click();
+                }
+            });
+        });
+        
+        // Helper functions
+        function hideAuthModal() {
+            document.getElementById('authModal').style.display = 'none';
+        }
+        
+        function continueAsGuest() {
+            hideAuthModal();
+            showToast('Welcome! You can vote without registration.', 'success');
+        }
+        
+        function refreshVotes() {
+            if (typeof checkAllVotingStatus === 'function') {
+                checkAllVotingStatus();
+                updateProgress();
+                showToast('Votes refreshed!', 'info');
+            }
+        }
+        
+        function showToast(message, type = 'info') {
+            const toast = document.getElementById('toast');
+            if (!toast) return;
+            
+            toast.textContent = message;
+            toast.className = `toast ${type}`;
+            toast.style.display = 'block';
+            
+            setTimeout(() => {
+                toast.style.display = 'none';
+            }, 3000);
+        }
+    </script>
 </body>
 </html>
