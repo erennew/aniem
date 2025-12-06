@@ -1,16 +1,17 @@
+
 <!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Anime Voting 2025 - Vote Now!</title>
-    <link rel="stylesheet" href="/css/styles.css">
+    <link rel="stylesheet" href="css/styles.css">
     <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@300;400;500;700;900&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <style>
-        /* Quick fixes for admin login button */
+        /* Admin login button */
         .admin-login-btn {
-            position: absolute;
+            position: fixed;
             top: 20px;
             right: 20px;
             background: rgba(99, 102, 241, 0.9);
@@ -24,7 +25,7 @@
             align-items: center;
             gap: 8px;
             transition: all 0.3s;
-            z-index: 100;
+            z-index: 1000;
         }
         
         .admin-login-btn:hover {
@@ -33,6 +34,25 @@
             box-shadow: 0 5px 15px rgba(99, 102, 241, 0.3);
         }
         
+        /* Fix scroll issue */
+        html, body {
+            height: 100%;
+            overflow-x: hidden;
+            margin: 0;
+            padding: 0;
+        }
+        
+        .container {
+            min-height: auto;
+            padding-bottom: 40px;
+        }
+        
+        /* Remove the voting dashboard section */
+        .user-panel {
+            display: none !important;
+        }
+        
+        /* Modal styles */
         .auth-modal {
             display: none;
             position: fixed;
@@ -41,7 +61,7 @@
             width: 100%;
             height: 100%;
             background: rgba(0, 0, 0, 0.8);
-            z-index: 1000;
+            z-index: 2000;
             justify-content: center;
             align-items: center;
         }
@@ -110,32 +130,6 @@
             margin-bottom: 20px;
         }
         
-        .auth-footer {
-            border-top: 1px solid #e5e7eb;
-            padding-top: 20px;
-        }
-        
-        .auth-footer p {
-            color: #666;
-            margin-bottom: 15px;
-            font-size: 0.9rem;
-        }
-        
-        .guest-btn {
-            width: 100%;
-            padding: 12px;
-            background: #10b981;
-            color: white;
-            border: none;
-            border-radius: 8px;
-            font-size: 1rem;
-            cursor: pointer;
-            display: flex;
-            justify-content: center;
-            align-items: center;
-            gap: 8px;
-        }
-        
         .error-message {
             color: #ef4444;
             margin-top: 10px;
@@ -145,7 +139,6 @@
         
         @media (max-width: 768px) {
             .admin-login-btn {
-                position: fixed;
                 top: 10px;
                 right: 10px;
                 padding: 8px 15px;
@@ -180,10 +173,7 @@
             </button>
             
             <div class="auth-footer">
-                <p>Regular users can vote without login!</p>
-                <button onclick="continueAsGuest()" class="guest-btn">
-                    <i class="fas fa-user"></i> Continue as Guest
-                </button>
+                <p>This site is public. Anyone can vote without login!</p>
             </div>
         </div>
     </div>
@@ -193,18 +183,9 @@
         <div class="header-container">
             <h1><i class="fas fa-vote-yea"></i> Anime Awards 2025</h1>
             <p class="subtitle">Vote for your favorites across multiple categories</p>
-            <div class="user-info" id="userInfo">
-                <span id="usernameDisplay">Guest User</span>
-                <button onclick="refreshVotes()" class="logout-btn">
-                    <i class="fas fa-redo"></i> Refresh
-                </button>
-            </div>
         </div>
         <nav class="main-nav">
             <a href="#" class="nav-link active"><i class="fas fa-home"></i> Vote</a>
-            <a href="admin.html" class="nav-link" id="adminLink" style="display: none;">
-                <i class="fas fa-chart-bar"></i> Admin Panel
-            </a>
             <a href="#results" class="nav-link" onclick="showMyResults()">
                 <i class="fas fa-poll"></i> Results
             </a>
@@ -222,28 +203,6 @@
 
     <!-- Main Voting Container -->
     <main class="container">
-        <!-- Stats Panel -->
-        <div class="user-panel" id="userPanel">
-            <h3><i class="fas fa-chart-line"></i> Voting Dashboard</h3>
-            <div class="user-stats">
-                <div class="stat-box">
-                    <i class="fas fa-check-circle"></i>
-                    <span id="votedCount">0</span>
-                    <small>Voted</small>
-                </div>
-                <div class="stat-box">
-                    <i class="fas fa-clock"></i>
-                    <span id="pendingCount">4</span>
-                    <small>Pending</small>
-                </div>
-                <div class="stat-box">
-                    <i class="fas fa-users"></i>
-                    <span id="totalVotesCount">0</span>
-                    <small>Total Votes</small>
-                </div>
-            </div>
-        </div>
-
         <!-- Best Anime Category -->
         <section class="category-section" data-category="Best Anime of 2025" id="category1">
             <div class="category-header">
@@ -456,6 +415,9 @@
             <h2><i class="fas fa-chart-bar"></i> Live Voting Results</h2>
             <div class="results-grid" id="myResults">
                 <!-- Results will be displayed here -->
+                <div class="result-card">
+                    <h3>Loading results...</h3>
+                </div>
             </div>
         </section>
     </main>
@@ -505,28 +467,9 @@
         </div>
     </div>
 
-    <script src="/js/script.js"></script>
+    <script src="js/script.js"></script>
     <script>
-        // Quick fix for inline event handlers that might conflict
-        // Override the vote function if needed
-        window.vote = function(selection, category) {
-            if (typeof currentVote === 'object' && currentVote !== null) {
-                // Use the script.js vote function
-                currentVote = { selection, category };
-                
-                // Show confirmation modal
-                const modal = document.getElementById('confirmModal');
-                const message = document.getElementById('confirmMessage');
-                
-                message.textContent = `Are you sure you want to vote for "${selection}" in "${category}"?`;
-                modal.style.display = 'flex';
-            } else {
-                // Fallback if script.js not loaded
-                alert(`You voted for: ${selection} in ${category}`);
-            }
-        };
-        
-        // Admin login modal handlers
+        // Admin login functionality
         document.addEventListener('DOMContentLoaded', function() {
             const adminLoginBtn = document.getElementById('adminLoginBtn');
             const authModal = document.getElementById('authModal');
@@ -539,47 +482,29 @@
             }
             
             if (adminLoginButton) {
-                adminLoginButton.addEventListener('click', async function() {
+                adminLoginButton.addEventListener('click', function() {
                     const username = document.getElementById('loginUsername').value;
                     const password = document.getElementById('loginPassword').value;
                     const errorElement = document.getElementById('loginError');
                     
                     errorElement.textContent = '';
                     
-                    try {
-                        const response = await fetch('/api/admin/login', {
-                            method: 'POST',
-                            headers: {
-                                'Content-Type': 'application/json',
-                            },
-                            body: JSON.stringify({ username, password })
-                        });
+                    // Simple admin login check
+                    if (username === 'admin' && password === 'admin123') {
+                        // Store admin token
+                        const adminToken = btoa('admin:' + Date.now());
+                        localStorage.setItem('adminToken', adminToken);
+                        localStorage.setItem('adminTokenExpiry', Date.now() + (24 * 60 * 60 * 1000));
                         
-                        const data = await response.json();
+                        showToast('Admin login successful!', 'success');
+                        hideAuthModal();
                         
-                        if (data.success) {
-                            localStorage.setItem('adminToken', data.token);
-                            localStorage.setItem('adminUser', JSON.stringify(data.user));
-                            
-                            // Show admin link
-                            const adminLink = document.getElementById('adminLink');
-                            if (adminLink) {
-                                adminLink.style.display = 'block';
-                            }
-                            
-                            showToast('Admin login successful!', 'success');
-                            hideAuthModal();
-                            
-                            // Redirect to admin page after 1 second
-                            setTimeout(() => {
-                                window.location.href = 'admin.html';
-                            }, 1000);
-                        } else {
-                            errorElement.textContent = data.error || 'Login failed';
-                        }
-                    } catch (error) {
-                        errorElement.textContent = 'Network error. Please try again.';
-                        console.error('Admin login error:', error);
+                        // Redirect to admin page after 1 second
+                        setTimeout(() => {
+                            window.location.href = 'admin.html';
+                        }, 1000);
+                    } else {
+                        errorElement.textContent = 'Invalid username or password';
                     }
                 });
             }
@@ -595,29 +520,23 @@
             };
             
             // Allow Enter key in admin login form
-            document.getElementById('loginPassword').addEventListener('keypress', function(e) {
+            document.getElementById('loginPassword')?.addEventListener('keypress', function(e) {
                 if (e.key === 'Enter') {
-                    adminLoginButton.click();
+                    document.getElementById('adminLoginButton')?.click();
                 }
             });
+            
+            // Load results on page load
+            setTimeout(() => {
+                if (typeof loadLiveResults === 'function') {
+                    loadLiveResults();
+                }
+            }, 500);
         });
         
         // Helper functions
         function hideAuthModal() {
             document.getElementById('authModal').style.display = 'none';
-        }
-        
-        function continueAsGuest() {
-            hideAuthModal();
-            showToast('Welcome! You can vote without registration.', 'success');
-        }
-        
-        function refreshVotes() {
-            if (typeof checkAllVotingStatus === 'function') {
-                checkAllVotingStatus();
-                updateProgress();
-                showToast('Votes refreshed!', 'info');
-            }
         }
         
         function showToast(message, type = 'info') {
@@ -632,6 +551,23 @@
                 toast.style.display = 'none';
             }, 3000);
         }
+        
+        function showMyResults() {
+            const resultsSection = document.getElementById('results');
+            if (resultsSection) {
+                resultsSection.scrollIntoView({ behavior: 'smooth' });
+                if (typeof loadLiveResults === 'function') {
+                    loadLiveResults();
+                }
+            }
+        }
+        
+        // Initialize voting
+        setTimeout(() => {
+            if (typeof initApp === 'function') {
+                initApp();
+            }
+        }, 100);
     </script>
 </body>
 </html>
