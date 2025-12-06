@@ -1,0 +1,351 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Anime Voting 2025 - Vote Now!</title>
+    <link rel="stylesheet" href="css/styles.css">
+    <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@300;400;500;700;900&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+</head>
+<body>
+
+    <!-- Login/Register Modal -->
+    <div id="authModal" class="auth-modal">
+        <div class="auth-content">
+            <h2><i class="fas fa-user"></i> Welcome to Anime Voting 2025</h2>
+            <div class="auth-tabs">
+                <button class="tab-btn active" onclick="switchTab('login')">Login</button>
+                <button class="tab-btn" onclick="switchTab('register')">Register</button>
+            </div>
+            
+            <div id="loginTab" class="auth-tab">
+                <input type="text" id="loginUsername" placeholder="Username" required>
+                <input type="password" id="loginPassword" placeholder="Password" required>
+                <button onclick="login()" class="auth-btn"><i class="fas fa-sign-in-alt"></i> Login</button>
+                <p id="loginError" class="error-message"></p>
+            </div>
+            
+            <div id="registerTab" class="auth-tab" style="display: none;">
+                <input type="text" id="registerUsername" placeholder="Choose Username" required>
+                <input type="password" id="registerPassword" placeholder="Choose Password" required>
+                <button onclick="register()" class="auth-btn"><i class="fas fa-user-plus"></i> Register</button>
+                <p id="registerError" class="error-message"></p>
+            </div>
+        </div>
+    </div>
+
+    <!-- Header Section -->
+    <header class="header">
+        <div class="header-container">
+            <h1><i class="fas fa-vote-yea"></i> Anime Awards 2025</h1>
+            <p class="subtitle">Vote for your favorites across multiple categories</p>
+            <div class="user-info" id="userInfo" style="display: none;">
+                <span id="usernameDisplay"></span>
+                <button onclick="logout()" class="logout-btn"><i class="fas fa-sign-out-alt"></i> Logout</button>
+            </div>
+        </div>
+        <nav class="main-nav">
+            <a href="#" class="nav-link active"><i class="fas fa-home"></i> Vote</a>
+            <a href="admin.html" class="nav-link" id="adminLink" style="display: none;"><i class="fas fa-chart-bar"></i> Admin</a>
+            <a href="#results" class="nav-link" onclick="showMyResults()"><i class="fas fa-poll"></i> My Votes</a>
+        </nav>
+    </header>
+
+    <!-- Progress Bar -->
+    <div class="progress-container">
+        <div class="progress-bar" id="progressBar"></div>
+        <div class="progress-stats">
+            <span id="progressText">0/4 Categories Voted</span>
+            <span id="progressPercent">0%</span>
+        </div>
+    </div>
+
+    <!-- Main Voting Container -->
+    <main class="container">
+        <!-- User Info Panel -->
+        <div class="user-panel" id="userPanel" style="display: none;">
+            <h3><i class="fas fa-user-circle"></i> Voting Dashboard</h3>
+            <div class="user-stats">
+                <div class="stat-box">
+                    <i class="fas fa-check-circle"></i>
+                    <span id="votedCount">0</span>
+                    <small>Voted</small>
+                </div>
+                <div class="stat-box">
+                    <i class="fas fa-clock"></i>
+                    <span id="pendingCount">4</span>
+                    <small>Pending</small>
+                </div>
+                <div class="stat-box">
+                    <i class="fas fa-trophy"></i>
+                    <span id="totalVotesCount">0</span>
+                    <small>Total Votes</small>
+                </div>
+            </div>
+        </div>
+
+        <!-- Best Anime Category -->
+        <section class="category-section" data-category="Best Anime of 2025" id="category1">
+            <div class="category-header">
+                <i class="fas fa-crown"></i>
+                <h2>Best Anime of 2025</h2>
+                <span class="category-status" id="status1">Not Voted</span>
+            </div>
+            <div class="category-description">
+                <p>Select the anime that impressed you the most this year!</p>
+            </div>
+            <div class="anime-grid">
+                <div class="anime-card" data-anime="Attack on Titan: Final Season">
+                    <div class="card-header">
+                        <img src="https://images.unsplash.com/photo-1578662996442-48f60103fc96?ixlib=rb-4.0.3&auto=format&fit=crop&w=600&q=80" alt="Attack on Titan">
+                        <div class="card-badge">Popular</div>
+                    </div>
+                    <div class="card-body">
+                        <h3 class="anime-title">Attack on Titan: Final Season</h3>
+                        <p class="anime-desc">The epic conclusion to one of the greatest anime series of all time.</p>
+                        <div class="anime-stats">
+                            <span><i class="fas fa-star"></i> 9.5/10</span>
+                            <span><i class="fas fa-eye"></i> 2.5M+</span>
+                        </div>
+                    </div>
+                    <div class="card-footer">
+                        <button class="vote-btn" onclick="vote('Attack on Titan: Final Season', 'Best Anime of 2025')">
+                            <i class="fas fa-vote-yea"></i> Vote Now
+                        </button>
+                    </div>
+                </div>
+
+                <div class="anime-card" data-anime="Jujutsu Kaisen">
+                    <div class="card-header">
+                        <img src="https://images.unsplash.com/photo-1518709268805-4e9042af2176?ixlib=rb-4.0.3&auto=format&fit=crop&w=600&q=80" alt="Jujutsu Kaisen">
+                    </div>
+                    <div class="card-body">
+                        <h3 class="anime-title">Jujutsu Kaisen</h3>
+                        <p class="anime-desc">Dark fantasy battle anime with stunning animation and intense fights.</p>
+                        <div class="anime-stats">
+                            <span><i class="fas fa-star"></i> 9.0/10</span>
+                            <span><i class="fas fa-eye"></i> 2.1M+</span>
+                        </div>
+                    </div>
+                    <div class="card-footer">
+                        <button class="vote-btn" onclick="vote('Jujutsu Kaisen', 'Best Anime of 2025')">
+                            <i class="fas fa-vote-yea"></i> Vote Now
+                        </button>
+                    </div>
+                </div>
+
+                <div class="anime-card" data-anime="Demon Slayer: Mugen Train">
+                    <div class="card-header">
+                        <img src="https://images.unsplash.com/photo-1579546929662-711aa81148cf?ixlib=rb-4.0.3&auto=format&fit=crop&w=600&q=80" alt="Demon Slayer">
+                    </div>
+                    <div class="card-body">
+                        <h3 class="anime-title">Demon Slayer: Mugen Train</h3>
+                        <p class="anime-desc">Continuing the epic journey with breathtaking animation quality.</p>
+                        <div class="anime-stats">
+                            <span><i class="fas fa-star"></i> 9.3/10</span>
+                            <span><i class="fas fa-eye"></i> 2.3M+</span>
+                        </div>
+                    </div>
+                    <div class="card-footer">
+                        <button class="vote-btn" onclick="vote('Demon Slayer: Mugen Train', 'Best Anime of 2025')">
+                            <i class="fas fa-vote-yea"></i> Vote Now
+                        </button>
+                    </div>
+                </div>
+
+                <div class="anime-card" data-anime="Re:Zero - Starting Life in Another World">
+                    <div class="card-header">
+                        <img src="https://images.unsplash.com/photo-1519681393784-d120267933ba?ixlib=rb-4.0.3&auto=format&fit=crop&w=600&q=80" alt="Re:Zero">
+                    </div>
+                    <div class="card-body">
+                        <h3 class="anime-title">Re:Zero Season 3</h3>
+                        <p class="anime-desc">Psychological isekai with compelling character development.</p>
+                        <div class="anime-stats">
+                            <span><i class="fas fa-star"></i> 8.8/10</span>
+                            <span><i class="fas fa-eye"></i> 1.8M+</span>
+                        </div>
+                    </div>
+                    <div class="card-footer">
+                        <button class="vote-btn" onclick="vote('Re:Zero - Starting Life in Another World', 'Best Anime of 2025')">
+                            <i class="fas fa-vote-yea"></i> Vote Now
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- Best Animation Studio Category -->
+        <section class="category-section" data-category="Best Animation Studio" id="category2">
+            <div class="category-header">
+                <i class="fas fa-palette"></i>
+                <h2>Best Animation Studio</h2>
+                <span class="category-status" id="status2">Not Voted</span>
+            </div>
+            <div class="category-description">
+                <p>Which studio delivered the most impressive visual experience?</p>
+            </div>
+            <div class="studio-grid">
+                <div class="studio-card" data-anime="MAPPA">
+                    <div class="studio-icon">
+                        <i class="fas fa-film"></i>
+                    </div>
+                    <h3>MAPPA</h3>
+                    <p>Known for: Attack on Titan, Jujutsu Kaisen, Chainsaw Man</p>
+                    <button class="vote-btn studio-btn" onclick="vote('MAPPA', 'Best Animation Studio')">
+                        Vote for MAPPA
+                    </button>
+                </div>
+
+                <div class="studio-card" data-anime="Ufotable">
+                    <div class="studio-icon">
+                        <i class="fas fa-fire"></i>
+                    </div>
+                    <h3>Ufotable</h3>
+                    <p>Known for: Demon Slayer, Fate series</p>
+                    <button class="vote-btn studio-btn" onclick="vote('Ufotable', 'Best Animation Studio')">
+                        Vote for Ufotable
+                    </button>
+                </div>
+
+                <div class="studio-card" data-anime="Kyoto Animation">
+                    <div class="studio-icon">
+                        <i class="fas fa-heart"></i>
+                    </div>
+                    <h3>Kyoto Animation</h3>
+                    <p>Known for: Violet Evergarden, K-On!, Clannad</p>
+                    <button class="vote-btn studio-btn" onclick="vote('Kyoto Animation', 'Best Animation Studio')">
+                        Vote for Kyoto Animation
+                    </button>
+                </div>
+            </div>
+        </section>
+
+        <!-- Best Voice Actor Category -->
+        <section class="category-section" data-category="Best Voice Actor of 2025" id="category3">
+            <div class="category-header">
+                <i class="fas fa-microphone"></i>
+                <h2>Best Voice Actor of 2025</h2>
+                <span class="category-status" id="status3">Not Voted</span>
+            </div>
+            <div class="actor-grid">
+                <div class="actor-card" data-anime="Yuki Kaji">
+                    <img src="https://images.unsplash.com/photo-1560250097-0b93528c311a?ixlib=rb-4.0.3&auto=format&fit=crop&w=300&q=80" alt="Yuki Kaji">
+                    <h3>Yuki Kaji</h3>
+                    <p class="actor-role">Eren Yeager (Attack on Titan)</p>
+                    <button class="vote-btn actor-btn" onclick="vote('Yuki Kaji', 'Best Voice Actor of 2025')">
+                        <i class="fas fa-microphone-alt"></i> Vote
+                    </button>
+                </div>
+
+                <div class="actor-card" data-anime="Natsuki Hanae">
+                    <img src="https://images.unsplash.com/photo-1564564321837-a57b7070ac4f?ixlib=rb-4.0.3&auto=format&fit=crop&w=300&q=80" alt="Natsuki Hanae">
+                    <h3>Natsuki Hanae</h3>
+                    <p class="actor-role">Tanjiro Kamado (Demon Slayer)</p>
+                    <button class="vote-btn actor-btn" onclick="vote('Natsuki Hanae', 'Best Voice Actor of 2025')">
+                        <i class="fas fa-microphone-alt"></i> Vote
+                    </button>
+                </div>
+
+                <div class="actor-card" data-anime="Jun Fukuyama">
+                    <img src="https://images.unsplash.com/photo-1544725176-7c40e5a71c5e?ixlib=rb-4.0.3&auto=format&fit=crop&w=300&q=80" alt="Jun Fukuyama">
+                    <h3>Jun Fukuyama</h3>
+                    <p class="actor-role">Lelouch (Code Geass)</p>
+                    <button class="vote-btn actor-btn" onclick="vote('Jun Fukuyama', 'Best Voice Actor of 2025')">
+                        <i class="fas fa-microphone-alt"></i> Vote
+                    </button>
+                </div>
+            </div>
+        </section>
+
+        <!-- Most Anticipated Category -->
+        <section class="category-section" data-category="Most Anticipated Anime of 2025" id="category4">
+            <div class="category-header">
+                <i class="fas fa-calendar-star"></i>
+                <h2>Most Anticipated Anime of 2025</h2>
+                <span class="category-status" id="status4">Not Voted</span>
+            </div>
+            <div class="anticipated-grid">
+                <div class="anticipated-card" data-anime="Attack on Titan: The Final Battle">
+                    <div class="anticipated-badge">Finale</div>
+                    <h3>Attack on Titan: The Final Battle</h3>
+                    <p>The ultimate conclusion to the epic saga</p>
+                    <div class="anticipation-meter">
+                        <div class="meter-fill" style="width: 95%"></div>
+                    </div>
+                    <button class="vote-btn anticipated-btn" onclick="vote('Attack on Titan: The Final Battle', 'Most Anticipated Anime of 2025')">
+                        <i class="fas fa-fire"></i> Most Anticipated
+                    </button>
+                </div>
+
+                <div class="anticipated-card" data-anime="Chainsaw Man Season 2">
+                    <div class="anticipated-badge">New Season</div>
+                    <h3>Chainsaw Man Season 2</h3>
+                    <p>Continuing the wild and violent adventure</p>
+                    <div class="anticipation-meter">
+                        <div class="meter-fill" style="width: 85%"></div>
+                    </div>
+                    <button class="vote-btn anticipated-btn" onclick="vote('Chainsaw Man Season 2', 'Most Anticipated Anime of 2025')">
+                        <i class="fas fa-fire"></i> Most Anticipated
+                    </button>
+                </div>
+            </div>
+        </section>
+
+        <!-- Results Section -->
+        <section class="results-section" id="results">
+            <h2><i class="fas fa-chart-bar"></i> My Voting Results</h2>
+            <div class="results-grid" id="myResults">
+                <!-- Results will be displayed here -->
+            </div>
+        </section>
+    </main>
+
+    <!-- Footer -->
+    <footer class="footer">
+        <div class="footer-content">
+            <div class="footer-section">
+                <h3><i class="fas fa-award"></i> Anime Awards 2025</h3>
+                <p>Celebrating excellence in anime content creation</p>
+            </div>
+            <div class="footer-section">
+                <h3>Categories</h3>
+                <ul>
+                    <li>Best Anime</li>
+                    <li>Best Studio</li>
+                    <li>Best Voice Actor</li>
+                    <li>Most Anticipated</li>
+                </ul>
+            </div>
+            <div class="footer-section">
+                <h3>Connect</h3>
+                <div class="social-icons">
+                    <a href="#"><i class="fab fa-twitter"></i></a>
+                    <a href="#"><i class="fab fa-discord"></i></a>
+                    <a href="#"><i class="fab fa-reddit"></i></a>
+                </div>
+            </div>
+        </div>
+        <div class="footer-bottom">
+            <p>&copy; 2025 Anime Voting Platform. All anime rights belong to their respective owners.</p>
+        </div>
+    </footer>
+
+    <!-- Notification Toast -->
+    <div id="toast" class="toast"></div>
+
+    <!-- Confirmation Modal -->
+    <div id="confirmModal" class="modal">
+        <div class="modal-content">
+            <h3><i class="fas fa-question-circle"></i> Confirm Your Vote</h3>
+            <p id="confirmMessage">Are you sure you want to vote for this?</p>
+            <div class="modal-buttons">
+                <button onclick="confirmVote(true)" class="btn-confirm">Yes, Vote Now!</button>
+                <button onclick="confirmVote(false)" class="btn-cancel">Cancel</button>
+            </div>
+        </div>
+    </div>
+
+    <script src="js/script.js"></script>
+</body>
+</html>
