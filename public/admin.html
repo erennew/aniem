@@ -1,0 +1,692 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Admin Dashboard - Anime Voting CMS</title>
+    <link rel="stylesheet" href="css/admin.css">
+    <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@300;400;500;700;900&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.10.0/font/bootstrap-icons.css">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/sortablejs@1.15.0/Sortable.min.js"></script>
+</head>
+<body>
+    <!-- Admin Header -->
+    <header class="admin-header">
+        <div class="admin-header-content">
+            <div class="header-left">
+                <h1><i class="fas fa-cogs"></i> Anime Voting CMS</h1>
+                <p>Complete Content Management System</p>
+            </div>
+            <div class="admin-controls">
+                <span class="admin-welcome" id="adminWelcome">
+                    <i class="fas fa-user-shield"></i> Admin
+                </span>
+                <button id="toggleSidebar" title="Toggle Sidebar">
+                    <i class="fas fa-bars"></i>
+                </button>
+                <button id="quickSave" title="Save Changes">
+                    <i class="fas fa-save"></i> Save
+                </button>
+                <button id="logoutAdmin" title="Logout">
+                    <i class="fas fa-sign-out-alt"></i>
+                </button>
+            </div>
+        </div>
+    </header>
+
+    <!-- Sidebar Navigation -->
+    <nav class="sidebar" id="sidebar">
+        <div class="sidebar-header">
+            <h3><i class="fas fa-tachometer-alt"></i> Dashboard</h3>
+            <button class="sidebar-close" id="closeSidebar">
+                <i class="fas fa-times"></i>
+            </button>
+        </div>
+        
+        <ul class="sidebar-menu">
+            <li class="menu-item active" data-section="dashboard">
+                <i class="fas fa-chart-bar"></i>
+                <span>Analytics</span>
+            </li>
+            
+            <li class="menu-item" data-section="content">
+                <i class="fas fa-edit"></i>
+                <span>Content Manager</span>
+                <i class="fas fa-chevron-down arrow"></i>
+            </li>
+            <ul class="submenu">
+                <li data-subsection="categories"><i class="fas fa-list"></i> Categories</li>
+                <li data-subsection="nominees"><i class="fas fa-users"></i> Nominees</li>
+                <li data-subsection="images"><i class="fas fa-images"></i> Images</li>
+                <li data-subsection="pages"><i class="fas fa-file"></i> Pages</li>
+            </ul>
+            
+            <li class="menu-item" data-section="users">
+                <i class="fas fa-users"></i>
+                <span>User Management</span>
+            </li>
+            
+            <li class="menu-item" data-section="design">
+                <i class="fas fa-palette"></i>
+                <span>Design & Theme</span>
+                <i class="fas fa-chevron-down arrow"></i>
+            </li>
+            <ul class="submenu">
+                <li data-subsection="themes"><i class="fas fa-paint-brush"></i> Themes</li>
+                <li data-subsection="colors"><i class="fas fa-fill-drip"></i> Colors</li>
+                <li data-subsection="layout"><i class="fas fa-th-large"></i> Layout</li>
+            </ul>
+            
+            <li class="menu-item" data-section="settings">
+                <i class="fas fa-cog"></i>
+                <span>System Settings</span>
+                <i class="fas fa-chevron-down arrow"></i>
+            </li>
+            <ul class="submenu">
+                <li data-subsection="general"><i class="fas fa-sliders-h"></i> General</li>
+                <li data-subsection="email"><i class="fas fa-envelope"></i> Email</li>
+                <li data-subsection="security"><i class="fas fa-shield-alt"></i> Security</li>
+                <li data-subsection="backup"><i class="fas fa-database"></i> Backup</li>
+            </ul>
+            
+            <li class="menu-item" data-section="tools">
+                <i class="fas fa-tools"></i>
+                <span>Tools</span>
+                <i class="fas fa-chevron-down arrow"></i>
+            </li>
+            <ul class="submenu">
+                <li data-subsection="import"><i class="fas fa-file-import"></i> Import Data</li>
+                <li data-subsection="export"><i class="fas fa-file-export"></i> Export Data</li>
+                <li data-subsection="logs"><i class="fas fa-clipboard-list"></i> System Logs</li>
+                <li data-subsection="cache"><i class="fas fa-broom"></i> Clear Cache</li>
+            </ul>
+        </ul>
+        
+        <div class="sidebar-footer">
+            <div class="system-status">
+                <div class="status-indicator active"></div>
+                <span>System Online</span>
+            </div>
+            <div class="version">v2.5.0</div>
+        </div>
+    </nav>
+
+    <!-- Main Content Area -->
+    <main class="main-content" id="mainContent">
+        
+        <!-- Dashboard Section -->
+        <section class="content-section active" id="dashboardSection">
+            <div class="section-header">
+                <h2><i class="fas fa-chart-line"></i> Analytics Dashboard</h2>
+                <div class="header-actions">
+                    <button class="btn-refresh" onclick="refreshDashboard()">
+                        <i class="fas fa-sync-alt"></i> Refresh
+                    </button>
+                    <select id="timeRange">
+                        <option value="today">Today</option>
+                        <option value="week" selected>This Week</option>
+                        <option value="month">This Month</option>
+                        <option value="year">This Year</option>
+                        <option value="custom">Custom Range</option>
+                    </select>
+                </div>
+            </div>
+            
+            <!-- Quick Stats -->
+            <div class="quick-stats">
+                <div class="stat-card">
+                    <div class="stat-icon total-votes">
+                        <i class="fas fa-vote-yea"></i>
+                    </div>
+                    <div class="stat-content">
+                        <h3>Total Votes</h3>
+                        <div class="stat-number" id="totalVotes">1,568</div>
+                        <div class="stat-change positive">
+                            <i class="fas fa-arrow-up"></i> 12.5% from yesterday
+                        </div>
+                    </div>
+                </div>
+                
+                <div class="stat-card">
+                    <div class="stat-icon active-users">
+                        <i class="fas fa-users"></i>
+                    </div>
+                    <div class="stat-content">
+                        <h3>Active Users</h3>
+                        <div class="stat-number" id="activeUsers">423</div>
+                        <div class="stat-change positive">
+                            <i class="fas fa-user-plus"></i> 28 today
+                        </div>
+                    </div>
+                </div>
+                
+                <div class="stat-card">
+                    <div class="stat-icon categories">
+                        <i class="fas fa-tags"></i>
+                    </div>
+                    <div class="stat-content">
+                        <h3>Categories</h3>
+                        <div class="stat-number" id="totalCategories">4</div>
+                        <div class="stat-change neutral">
+                            <i class="fas fa-equals"></i> No changes
+                        </div>
+                    </div>
+                </div>
+                
+                <div class="stat-card">
+                    <div class="stat-icon nominees">
+                        <i class="fas fa-trophy"></i>
+                    </div>
+                    <div class="stat-content">
+                        <h3>Total Nominees</h3>
+                        <div class="stat-number" id="totalNominees">12</div>
+                        <div class="stat-change positive">
+                            <i class="fas fa-plus"></i> 2 new
+                        </div>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- Charts Row -->
+            <div class="charts-row">
+                <div class="chart-container">
+                    <div class="chart-header">
+                        <h3>Voting Trends</h3>
+                        <div class="chart-actions">
+                            <button class="btn-chart-action" onclick="exportChart('voteChart')">
+                                <i class="fas fa-download"></i>
+                            </button>
+                            <button class="btn-chart-action" onclick="toggleChartType('voteChart')">
+                                <i class="fas fa-exchange-alt"></i>
+                            </button>
+                        </div>
+                    </div>
+                    <canvas id="voteChart"></canvas>
+                </div>
+                
+                <div class="chart-container">
+                    <div class="chart-header">
+                        <h3>Category Distribution</h3>
+                        <div class="chart-actions">
+                            <button class="btn-chart-action" onclick="exportChart('categoryChart')">
+                                <i class="fas fa-download"></i>
+                            </button>
+                            <select onchange="changeChartType('categoryChart', this.value)">
+                                <option value="doughnut">Doughnut</option>
+                                <option value="pie">Pie</option>
+                                <option value="polarArea">Polar</option>
+                            </select>
+                        </div>
+                    </div>
+                    <canvas id="categoryChart"></canvas>
+                </div>
+            </div>
+            
+            <!-- Recent Activity -->
+            <div class="recent-activity">
+                <h3><i class="fas fa-history"></i> Recent Activity</h3>
+                <div class="activity-list" id="activityList">
+                    <!-- Activity items will be loaded here -->
+                </div>
+            </div>
+        </section>
+
+        <!-- Content Manager Section -->
+        <section class="content-section" id="contentSection">
+            <div class="section-header">
+                <h2><i class="fas fa-edit"></i> Content Management</h2>
+                <div class="header-actions">
+                    <button class="btn-primary" onclick="saveAllContent()">
+                        <i class="fas fa-save"></i> Save All Changes
+                    </button>
+                    <button class="btn-secondary" onclick="previewSite()">
+                        <i class="fas fa-eye"></i> Preview
+                    </button>
+                </div>
+            </div>
+            
+            <!-- Categories Subsection -->
+            <div class="subsection active" id="categoriesSubsection">
+                <h3><i class="fas fa-list"></i> Voting Categories</h3>
+                <p class="subsection-description">Manage voting categories, add new categories, or edit existing ones.</p>
+                
+                <div class="content-toolbar">
+                    <button class="btn-success" onclick="addNewCategory()">
+                        <i class="fas fa-plus"></i> Add Category
+                    </button>
+                    <button class="btn-info" onclick="sortCategories()">
+                        <i class="fas fa-sort"></i> Sort Categories
+                    </button>
+                    <button class="btn-warning" onclick="resetCategories()">
+                        <i class="fas fa-undo"></i> Reset to Default
+                    </button>
+                </div>
+                
+                <div class="categories-list" id="categoriesList">
+                    <!-- Categories will be loaded here -->
+                </div>
+                
+                <!-- Category Editor Modal -->
+                <div class="modal" id="categoryModal">
+                    <div class="modal-content">
+                        <div class="modal-header">
+                            <h3><i class="fas fa-edit"></i> Edit Category</h3>
+                            <button class="modal-close" onclick="closeModal('categoryModal')">
+                                <i class="fas fa-times"></i>
+                            </button>
+                        </div>
+                        <div class="modal-body">
+                            <form id="categoryForm">
+                                <div class="form-group">
+                                    <label for="categoryName">
+                                        <i class="fas fa-heading"></i> Category Name
+                                    </label>
+                                    <input type="text" id="categoryName" required 
+                                           placeholder="Best Anime of 2025">
+                                </div>
+                                
+                                <div class="form-group">
+                                    <label for="categoryDescription">
+                                        <i class="fas fa-align-left"></i> Description
+                                    </label>
+                                    <textarea id="categoryDescription" rows="3"
+                                              placeholder="Select the anime that impressed you the most this year!"></textarea>
+                                </div>
+                                
+                                <div class="form-group">
+                                    <label for="categoryIcon">
+                                        <i class="fas fa-icons"></i> Icon
+                                    </label>
+                                    <select id="categoryIcon">
+                                        <option value="fa-crown">Crown</option>
+                                        <option value="fa-trophy">Trophy</option>
+                                        <option value="fa-star">Star</option>
+                                        <option value="fa-award">Award</option>
+                                        <option value="fa-heart">Heart</option>
+                                        <option value="fa-fire">Fire</option>
+                                        <option value="fa-gem">Gem</option>
+                                        <option value="fa-medal">Medal</option>
+                                    </select>
+                                </div>
+                                
+                                <div class="form-group">
+                                    <label for="categoryStatus">
+                                        <i class="fas fa-toggle-on"></i> Status
+                                    </label>
+                                    <select id="categoryStatus">
+                                        <option value="active">Active</option>
+                                        <option value="inactive">Inactive</option>
+                                        <option value="upcoming">Upcoming</option>
+                                    </select>
+                                </div>
+                                
+                                <div class="form-group">
+                                    <label>
+                                        <i class="fas fa-palette"></i> Color Theme
+                                    </label>
+                                    <div class="color-picker">
+                                        <input type="color" id="categoryColor" value="#6366f1">
+                                        <span id="colorValue">#6366f1</span>
+                                    </div>
+                                </div>
+                                
+                                <div class="form-group">
+                                    <label for="maxSelections">
+                                        <i class="fas fa-list-ol"></i> Max Selections
+                                    </label>
+                                    <input type="number" id="maxSelections" min="1" max="10" value="1">
+                                    <small>Number of nominees user can vote for</small>
+                                </div>
+                            </form>
+                        </div>
+                        <div class="modal-footer">
+                            <button class="btn-primary" onclick="saveCategory()">
+                                <i class="fas fa-save"></i> Save Category
+                            </button>
+                            <button class="btn-secondary" onclick="closeModal('categoryModal')">
+                                Cancel
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- Nominees Subsection -->
+            <div class="subsection" id="nomineesSubsection">
+                <h3><i class="fas fa-users"></i> Nominees Management</h3>
+                <p class="subsection-description">Add, edit, or remove nominees from each category.</p>
+                
+                <div class="content-toolbar">
+                    <select id="nomineeCategoryFilter" onchange="filterNominees()">
+                        <option value="all">All Categories</option>
+                        <!-- Categories will be populated here -->
+                    </select>
+                    <button class="btn-success" onclick="addNewNominee()">
+                        <i class="fas fa-plus"></i> Add Nominee
+                    </button>
+                    <button class="btn-info" onclick="bulkImportNominees()">
+                        <i class="fas fa-file-import"></i> Bulk Import
+                    </button>
+                </div>
+                
+                <div class="nominees-grid" id="nomineesGrid">
+                    <!-- Nominees will be loaded here -->
+                </div>
+                
+                <!-- Nominee Editor Modal -->
+                <div class="modal" id="nomineeModal">
+                    <div class="modal-content large">
+                        <div class="modal-header">
+                            <h3><i class="fas fa-user-edit"></i> Edit Nominee</h3>
+                            <button class="modal-close" onclick="closeModal('nomineeModal')">
+                                <i class="fas fa-times"></i>
+                            </button>
+                        </div>
+                        <div class="modal-body">
+                            <div class="form-row">
+                                <div class="form-group">
+                                    <label for="nomineeName">
+                                        <i class="fas fa-user"></i> Name
+                                    </label>
+                                    <input type="text" id="nomineeName" required 
+                                           placeholder="Attack on Titan: Final Season">
+                                </div>
+                                
+                                <div class="form-group">
+                                    <label for="nomineeCategory">
+                                        <i class="fas fa-tag"></i> Category
+                                    </label>
+                                    <select id="nomineeCategory" required>
+                                        <!-- Categories will be populated here -->
+                                    </select>
+                                </div>
+                            </div>
+                            
+                            <div class="form-group">
+                                <label for="nomineeDescription">
+                                    <i class="fas fa-align-left"></i> Description
+                                </label>
+                                <textarea id="nomineeDescription" rows="3"
+                                          placeholder="The epic conclusion to one of the greatest anime series of all time."></textarea>
+                            </div>
+                            
+                            <div class="form-row">
+                                <div class="form-group">
+                                    <label for="nomineeImage">
+                                        <i class="fas fa-image"></i> Image URL
+                                    </label>
+                                    <div class="image-input">
+                                        <input type="text" id="nomineeImage" 
+                                               placeholder="https://example.com/image.jpg">
+                                        <button type="button" class="btn-small" onclick="browseImages()">
+                                            <i class="fas fa-folder-open"></i> Browse
+                                        </button>
+                                    </div>
+                                    <div class="image-preview" id="imagePreview">
+                                        <img src="" alt="Preview" id="previewImage">
+                                        <div class="preview-placeholder">
+                                            <i class="fas fa-image"></i>
+                                            <span>Image preview will appear here</span>
+                                        </div>
+                                    </div>
+                                </div>
+                                
+                                <div class="form-group">
+                                    <label for="nomineeStats">
+                                        <i class="fas fa-chart-bar"></i> Statistics
+                                    </label>
+                                    <div class="stats-inputs">
+                                        <input type="number" id="nomineeRating" 
+                                               placeholder="Rating (e.g., 9.5)" step="0.1" min="0" max="10">
+                                        <input type="number" id="nomineeViews" 
+                                               placeholder="Views (in millions)" step="0.1" min="0">
+                                    </div>
+                                </div>
+                            </div>
+                            
+                            <div class="form-group">
+                                <label for="nomineeTags">
+                                    <i class="fas fa-tags"></i> Tags
+                                </label>
+                                <input type="text" id="nomineeTags" 
+                                       placeholder="action, fantasy, drama (separate with commas)">
+                            </div>
+                            
+                            <div class="form-group">
+                                <label>
+                                    <i class="fas fa-toggle-on"></i> Status
+                                </label>
+                                <div class="toggle-group">
+                                    <label class="toggle-switch">
+                                        <input type="checkbox" id="nomineeActive" checked>
+                                        <span class="toggle-slider"></span>
+                                    </label>
+                                    <span class="toggle-label">Active</span>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="modal-footer">
+                            <button class="btn-primary" onclick="saveNominee()">
+                                <i class="fas fa-save"></i> Save Nominee
+                            </button>
+                            <button class="btn-danger" onclick="deleteNominee()" id="deleteNomineeBtn">
+                                <i class="fas fa-trash"></i> Delete
+                            </button>
+                            <button class="btn-secondary" onclick="closeModal('nomineeModal')">
+                                Cancel
+                            </button>
+                        </div>
+                    </div>
+                </div>
+                
+                <!-- Image Browser Modal -->
+                <div class="modal" id="imageBrowserModal">
+                    <div class="modal-content xlarge">
+                        <div class="modal-header">
+                            <h3><i class="fas fa-images"></i> Image Library</h3>
+                            <button class="modal-close" onclick="closeModal('imageBrowserModal')">
+                                <i class="fas fa-times"></i>
+                            </button>
+                        </div>
+                        <div class="modal-body">
+                            <div class="image-browser">
+                                <div class="browser-toolbar">
+                                    <button class="btn-success" onclick="uploadImage()">
+                                        <i class="fas fa-upload"></i> Upload Image
+                                    </button>
+                                    <input type="file" id="imageUpload" accept="image/*" style="display: none;">
+                                    <div class="search-box">
+                                        <i class="fas fa-search"></i>
+                                        <input type="text" placeholder="Search images..." 
+                                               onkeyup="searchImages(this.value)">
+                                    </div>
+                                </div>
+                                
+                                <div class="image-library" id="imageLibrary">
+                                    <!-- Images will be loaded here -->
+                                </div>
+                                
+                                <div class="browser-footer">
+                                    <div class="pagination">
+                                        <button class="btn-small" onclick="prevImagePage()">
+                                            <i class="fas fa-chevron-left"></i>
+                                        </button>
+                                        <span>Page <span id="imagePage">1</span></span>
+                                        <button class="btn-small" onclick="nextImagePage()">
+                                            <i class="fas fa-chevron-right"></i>
+                                        </button>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- Images Subsection -->
+            <div class="subsection" id="imagesSubsection">
+                <h3><i class="fas fa-images"></i> Image Management</h3>
+                <p class="subsection-description">Upload and manage images for nominees, banners, and backgrounds.</p>
+                
+                <div class="image-manager">
+                    <div class="upload-area" id="dropZone">
+                        <i class="fas fa-cloud-upload-alt"></i>
+                        <h4>Drop images here or click to upload</h4>
+                        <p>Supports JPG, PNG, GIF, WebP (Max 5MB each)</p>
+                        <input type="file" id="bulkUpload" multiple accept="image/*" 
+                               onchange="handleBulkUpload(this.files)">
+                    </div>
+                    
+                    <div class="image-filters">
+                        <select id="imageFilter" onchange="filterImages()">
+                            <option value="all">All Images</option>
+                            <option value="nominees">Nominee Images</option>
+                            <option value="banners">Banners</option>
+                            <option value="backgrounds">Backgrounds</option>
+                            <option value="icons">Icons</option>
+                        </select>
+                        <select id="sortImages" onchange="sortImages()">
+                            <option value="newest">Newest First</option>
+                            <option value="oldest">Oldest First</option>
+                            <option value="name">By Name</option>
+                            <option value="size">By Size</option>
+                        </select>
+                        <button class="btn-danger" onclick="deleteSelectedImages()">
+                            <i class="fas fa-trash"></i> Delete Selected
+                        </button>
+                    </div>
+                    
+                    <div class="image-grid" id="imageGrid">
+                        <!-- Images will be loaded here -->
+                    </div>
+                </div>
+            </div>
+            
+            <!-- Pages Subsection -->
+            <div class="subsection" id="pagesSubsection">
+                <h3><i class="fas fa-file"></i> Page Content</h3>
+                <p class="subsection-description">Edit homepage content, about page, and other static pages.</p>
+                
+                <div class="page-editor">
+                    <div class="page-list">
+                        <div class="page-item active" data-page="home">
+                            <i class="fas fa-home"></i>
+                            <span>Homepage</span>
+                        </div>
+                        <div class="page-item" data-page="about">
+                            <i class="fas fa-info-circle"></i>
+                            <span>About Page</span>
+                        </div>
+                        <div class="page-item" data-page="rules">
+                            <i class="fas fa-book"></i>
+                            <span>Rules & Guidelines</span>
+                        </div>
+                        <div class="page-item" data-page="contact">
+                            <i class="fas fa-envelope"></i>
+                            <span>Contact Page</span>
+                        </div>
+                        <div class="page-item" data-page="footer">
+                            <i class="fas fa-window-minimize"></i>
+                            <span>Footer Content</span>
+                        </div>
+                    </div>
+                    
+                    <div class="page-content">
+                        <div class="page-section" id="homePage">
+                            <h4>Homepage Content</h4>
+                            <div class="form-group">
+                                <label>Main Title</label>
+                                <input type="text" id="homeTitle" value="Anime Awards 2025">
+                            </div>
+                            <div class="form-group">
+                                <label>Subtitle</label>
+                                <input type="text" id="homeSubtitle" value="Vote for your favorites across multiple categories">
+                            </div>
+                            <div class="form-group">
+                                <label>Hero Image</label>
+                                <input type="text" id="homeHeroImage" placeholder="https://example.com/hero.jpg">
+                            </div>
+                            <div class="form-group">
+                                <label>Welcome Message</label>
+                                <textarea id="homeWelcome" rows="4">Welcome to the biggest anime voting event of the year! Cast your votes across various categories and help decide the winners.</textarea>
+                            </div>
+                        </div>
+                        
+                        <div class="page-section" id="aboutPage" style="display: none;">
+                            <h4>About Page Content</h4>
+                            <div class="form-group">
+                                <label>Page Title</label>
+                                <input type="text" id="aboutTitle" value="About Anime Awards 2025">
+                            </div>
+                            <div class="form-group">
+                                <label>Content</label>
+                                <textarea id="aboutContent" rows="8">The Anime Awards 2025 is an annual event where anime fans from around the world vote for their favorite shows, characters, studios, and more. Our mission is to celebrate excellence in anime and bring the global anime community together.</textarea>
+                            </div>
+                        </div>
+                        
+                        <!-- More page sections... -->
+                    </div>
+                </div>
+                
+                <div class="content-toolbar">
+                    <button class="btn-primary" onclick="savePageContent()">
+                        <i class="fas fa-save"></i> Save Page
+                    </button>
+                    <button class="btn-secondary" onclick="previewPage()">
+                        <i class="fas fa-eye"></i> Preview Page
+                    </button>
+                </div>
+            </div>
+        </section>
+
+        <!-- User Management Section -->
+        <section class="content-section" id="usersSection">
+            <!-- User management content will be loaded here -->
+        </section>
+
+        <!-- Design & Theme Section -->
+        <section class="content-section" id="designSection">
+            <!-- Design content will be loaded here -->
+        </section>
+
+        <!-- Settings Section -->
+        <section class="content-section" id="settingsSection">
+            <!-- Settings content will be loaded here -->
+        </section>
+
+        <!-- Tools Section -->
+        <section class="content-section" id="toolsSection">
+            <!-- Tools content will be loaded here -->
+        </section>
+    </main>
+
+    <!-- Toast Notifications -->
+    <div class="toast-container" id="toastContainer"></div>
+
+    <!-- Loading Overlay -->
+    <div class="loading-overlay" id="loadingOverlay">
+        <div class="loading-spinner">
+            <div class="spinner"></div>
+            <p>Loading...</p>
+        </div>
+    </div>
+
+    <!-- Confirmation Modal -->
+    <div class="modal" id="confirmModal">
+        <div class="modal-content small">
+            <div class="modal-body">
+                <i class="fas fa-question-circle"></i>
+                <h4 id="confirmMessage">Are you sure?</h4>
+            </div>
+            <div class="modal-footer">
+                <button class="btn-primary" onclick="confirmAction(true)">Yes</button>
+                <button class="btn-secondary" onclick="confirmAction(false)">No</button>
+            </div>
+        </div>
+    </div>
+
+    <script src="js/admin-cms.js"></script>
+</body>
+</html>
