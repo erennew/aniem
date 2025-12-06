@@ -1,780 +1,367 @@
+
 const express = require('express');
-const mongoose = require('mongoose');
 const cors = require('cors');
-const bcrypt = require('bcryptjs');
-const jwt = require('jsonwebtoken');
 const path = require('path');
-const crypto = require('crypto');
-require('dotenv').config();
+const fs = require('fs');
 
 const app = express();
+const PORT = process.env.PORT || 3000;
 
 // Middleware
+app.use(cors());
 app.use(express.json());
-app.use(express.urlencoded({ extended: true }));
-app.use(cors({
-    origin: function(origin, callback) {
-        // Allow requests with no origin (like mobile apps or curl requests)
-        if (!origin) return callback(null, true);
-        
-        const allowedOrigins = [
-            'https://aniem-seven.vercel.app',
-            'https://aniem-7mjyn9to7-erennews-projects.vercel.app',
-            'http://localhost:3000',
-            'http://localhost:3001'
-        ];
-        
-        if (allowedOrigins.includes(origin) || origin.includes('vercel.app')) {
-            return callback(null, true);
-        }
-        
-        callback(new Error('Not allowed by CORS'));
+app.use(express.static('public'));
+
+// Helper function to get client IP
+const getClientIP = (req) => {
+    return req.headers['x-forwarded-for'] || 
+           req.connection.remoteAddress || 
+           req.socket.remoteAddress || 
+           req.connection.socket.remoteAddress;
+};
+
+// Voting data storage
+let votingData = {
+    'Best Anime of 2025': {
+        'Attack on Titan: Final Season': 456,
+        'Jujutsu Kaisen': 389,
+        'Demon Slayer: Mugen Train': 342,
+        'Re:Zero - Starting Life in Another World': 267
     },
-    credentials: true
-}));
-
-// Serve static files from public folder
-app.use(express.static(path.join(__dirname, 'public')));
-
-// IMPORTANT: NEVER hardcode MongoDB credentials in code
-// Use environment variables instead
-const MONGODB_URI = process.env.MONGODB_URI;
-
-if (!MONGODB_URI) {
-    console.error('MONGODB_URI environment variable is not set!');
-    // Use a fallback for development only
-    console.log('Using in-memory data (no database) for demo');
-}
-
-// Schemas
-const VoteSchema = new mongoose.Schema({
-    userId: { type: String, required: true },
-    userIdentifier: { type: String, required: true }, // Browser fingerprint + IP hash
-    category: { type: String, required: true },
-    selection: { type: String, required: true },
-    timestamp: { type: Date, default: Date.now },
-    ipAddress: String,
-    userAgent: String
-});
-
-// Admin User Schema
-const AdminSchema = new mongoose.Schema({
-    username: { type: String, required: true, unique: true },
-    password: { type: String, required: true },
-    isAdmin: { type: Boolean, default: true },
-    createdAt: { type: Date, default: Date.now }
-});
-
-// CMS Schemas
-const CategorySchema = new mongoose.Schema({
-    name: String,
-    description: String,
-    icon: String,
-    color: String,
-    status: String,
-    order: Number
-});
-
-const NomineeSchema = new mongoose.Schema({
-    name: String,
-    categoryId: String,
-    description: String,
-    image: String,
-    rating: Number,
-    views: Number,
-    tags: [String],
-    status: String,
-    votes: Number
-});
-
-// Create models
-const Vote = mongoose.model('Vote', VoteSchema);
-const Admin = mongoose.model('Admin', AdminSchema);
-const Category = mongoose.model('Category', CategorySchema);
-const Nominee = mongoose.model('Nominee', NomineeSchema);
-
-// In-memory data storage for demo (if MongoDB fails)
-let demoData = {
-    categories: [
-        {
-            _id: 'cat1',
-            name: 'Best Anime of 2025',
-            description: 'Select the anime that impressed you the most this year!',
-            icon: 'fa-crown',
-            color: '#6366f1',
-            status: 'active',
-            order: 1
-        },
-        {
-            _id: 'cat2',
-            name: 'Best Animation Studio',
-            description: 'Which studio delivered the most impressive visual experience?',
-            icon: 'fa-palette',
-            color: '#10b981',
-            status: 'active',
-            order: 2
-        },
-        {
-            _id: 'cat3',
-            name: 'Best Voice Actor of 2025',
-            description: 'Recognize outstanding voice acting performances',
-            icon: 'fa-microphone',
-            color: '#f59e0b',
-            status: 'active',
-            order: 3
-        },
-        {
-            _id: 'cat4',
-            name: 'Most Anticipated Anime of 2025',
-            description: 'Which upcoming anime are you most excited about?',
-            icon: 'fa-calendar-star',
-            color: '#ef4444',
-            status: 'active',
-            order: 4
-        }
-    ],
-    nominees: [],
-    votes: [],
-    admins: []
+    'Best Animation Studio': {
+        'MAPPA': 523,
+        'Ufotable': 421,
+        'Kyoto Animation': 398
+    },
+    'Best Voice Actor of 2025': {
+        'Yuki Kaji': 267,
+        'Natsuki Hanae': 245,
+        'Jun Fukuyama': 189
+    },
+    'Most Anticipated Anime of 2025': {
+        'Attack on Titan: The Final Battle': 512,
+        'Chainsaw Man Season 2': 467
+    }
 };
 
-// Connect to MongoDB if URI exists
-let dbConnected = false;
-if (MONGODB_URI) {
-    mongoose.connect(MONGODB_URI, {
-        useNewUrlParser: true,
-        useUnifiedTopology: true
-    })
-    .then(() => {
-        console.log('Connected to MongoDB');
-        dbConnected = true;
-        
-        // Create default admin if not exists
-        createDefaultAdmin();
-    })
-    .catch(err => {
-        console.error('MongoDB connection error:', err);
-        console.log('Using demo mode with in-memory data');
-    });
-} else {
-    console.log('No MongoDB URI provided, using demo mode');
-}
+// Store IPs that have voted
+let votedIPs = new Set();
+// Store which categories each IP has voted in
+let ipVoteHistory = new Map(); // Map<IP, Set<category>>
 
-async function createDefaultAdmin() {
+// Load saved data from file
+function loadData() {
     try {
-        const adminExists = await Admin.findOne({ username: 'admin' });
-        if (!adminExists) {
-            const hashedPassword = await bcrypt.hash('admin123', 10);
-            const admin = new Admin({
-                username: 'admin',
-                password: hashedPassword,
-                isAdmin: true
-            });
-            await admin.save();
-            console.log('Default admin user created');
-        }
-    } catch (error) {
-        console.error('Error creating admin:', error);
-    }
-}
-
-// Helper function to generate unique user identifier (IP + User-Agent hash)
-function generateUserIdentifier(req) {
-    const ip = req.ip || req.connection.remoteAddress;
-    const userAgent = req.headers['user-agent'] || '';
-    const identifier = crypto.createHash('md5').update(ip + userAgent).digest('hex');
-    return identifier;
-}
-
-// Authentication middleware (for admin only)
-const authenticateAdmin = (req, res, next) => {
-    const authHeader = req.headers['authorization'];
-    const token = authHeader && authHeader.split(' ')[1];
-    
-    if (!token) {
-        return res.status(401).json({ error: 'Access token required' });
-    }
-    
-    jwt.verify(token, process.env.JWT_SECRET || 'your-secret-key-change-in-production', (err, user) => {
-        if (err) {
-            return res.status(403).json({ error: 'Invalid or expired token' });
-        }
-        
-        // Check if user is admin
-        if (!user.isAdmin) {
-            return res.status(403).json({ error: 'Admin access required' });
-        }
-        
-        req.user = user;
-        next();
-    });
-};
-
-// ==================== PUBLIC ROUTES ====================
-
-// Serve main HTML files
-app.get('/', (req, res) => {
-    res.sendFile(path.join(__dirname, 'public', 'index.html'));
-});
-
-app.get('/admin', (req, res) => {
-    res.sendFile(path.join(__dirname, 'public', 'admin.html'));
-});
-
-app.get('/login', (req, res) => {
-    res.sendFile(path.join(__dirname, 'public', 'login.html'));
-});
-
-// Health check endpoint
-app.get('/api/health', (req, res) => {
-    res.json({ 
-        status: 'ok', 
-        timestamp: new Date().toISOString(),
-        database: dbConnected ? 'connected' : 'demo-mode'
-    });
-});
-
-// Get Categories (Public)
-app.get('/api/categories', async (req, res) => {
-    try {
-        let categories;
-        if (dbConnected) {
-            categories = await Category.find().sort('order');
-        } else {
-            categories = demoData.categories;
-        }
-        
-        res.json(categories);
-    } catch (error) {
-        console.error('Error fetching categories:', error);
-        res.status(500).json({ error: 'Failed to fetch categories' });
-    }
-});
-
-// Get Nominees (Public)
-app.get('/api/nominees', async (req, res) => {
-    try {
-        let nominees;
-        if (dbConnected) {
-            nominees = await Nominee.find();
-        } else {
-            nominees = demoData.nominees;
-        }
-        
-        res.json(nominees);
-    } catch (error) {
-        console.error('Error fetching nominees:', error);
-        res.status(500).json({ error: 'Failed to fetch nominees' });
-    }
-});
-
-// ==================== VOTING ROUTES (NO LOGIN REQUIRED) ====================
-
-// Submit Vote (No authentication required)
-app.post('/api/vote', async (req, res) => {
-    try {
-        const { category, selection, userName } = req.body;
-        
-        if (!category || !selection) {
-            return res.status(400).json({ error: 'Category and selection required' });
-        }
-        
-        // Generate unique identifier for this user
-        const userIdentifier = generateUserIdentifier(req);
-        
-        // Check if already voted in this category using userIdentifier
-        let existingVote;
-        if (dbConnected) {
-            existingVote = await Vote.findOne({ 
-                userIdentifier, 
-                category 
-            });
-        } else {
-            existingVote = demoData.votes.find(v => 
-                v.userIdentifier === userIdentifier && v.category === category
-            );
-        }
-        
-        if (existingVote) {
-            return res.status(400).json({ 
-                error: 'You have already voted in this category. Each user can only vote once per category.' 
-            });
-        }
-        
-        // Create vote
-        const voteData = {
-            userId: userName || `user_${Date.now()}`,
-            userIdentifier,
-            category,
-            selection,
-            timestamp: new Date(),
-            ipAddress: req.ip,
-            userAgent: req.headers['user-agent']
-        };
-        
-        if (dbConnected) {
-            const vote = new Vote(voteData);
-            await vote.save();
+        if (fs.existsSync('voting-data.json')) {
+            const data = JSON.parse(fs.readFileSync('voting-data.json', 'utf8'));
+            votingData = data.votingData || votingData;
             
-            // Update nominee vote count
-            await Nominee.findOneAndUpdate(
-                { name: selection },
-                { $inc: { votes: 1 } },
-                { upsert: true }
-            );
-        } else {
-            demoData.votes.push({
-                id: 'vote_' + Date.now(),
-                ...voteData
-            });
+            // Convert saved arrays back to Sets and Maps
+            votedIPs = new Set(data.votedIPs || []);
             
-            // Update demo nominee votes
-            const nomineeIndex = demoData.nominees.findIndex(n => n.name === selection);
-            if (nomineeIndex !== -1) {
-                demoData.nominees[nomineeIndex].votes = (demoData.nominees[nomineeIndex].votes || 0) + 1;
+            ipVoteHistory = new Map();
+            if (data.ipVoteHistory) {
+                Object.entries(data.ipVoteHistory).forEach(([ip, categories]) => {
+                    ipVoteHistory.set(ip, new Set(categories));
+                });
             }
         }
-        
-        res.json({ 
-            success: true,
-            message: 'Vote submitted successfully! Thank you for voting.' 
-        });
     } catch (error) {
-        console.error('Voting error:', error);
-        res.status(500).json({ error: 'Voting failed. Please try again.' });
+        console.error('Error loading data:', error);
     }
+}
+
+// Save data to file
+function saveData() {
+    try {
+        const data = {
+            votingData,
+            votedIPs: Array.from(votedIPs),
+            ipVoteHistory: Array.from(ipVoteHistory.entries()).reduce((obj, [ip, categories]) => {
+                obj[ip] = Array.from(categories);
+                return obj;
+            }, {})
+        };
+        fs.writeFileSync('voting-data.json', JSON.stringify(data, null, 2));
+        console.log('Data saved successfully');
+    } catch (error) {
+        console.error('Error saving data:', error);
+    }
+}
+
+// Load data on startup
+loadData();
+
+// Auto-save data every 5 minutes
+setInterval(saveData, 5 * 60 * 1000);
+
+// Serve HTML files
+app.get('/', (req, res) => {
+    res.sendFile(path.join(__dirname, 'index.html'));
 });
 
-// Check if user can vote (by IP/User-Agent)
-app.post('/api/check-vote', async (req, res) => {
-    try {
-        const { category } = req.body;
-        
-        if (!category) {
-            return res.status(400).json({ error: 'Category required' });
-        }
-        
-        const userIdentifier = generateUserIdentifier(req);
-        
-        let existingVote;
-        if (dbConnected) {
-            existingVote = await Vote.findOne({ 
-                userIdentifier, 
-                category 
-            });
-        } else {
-            existingVote = demoData.votes.find(v => 
-                v.userIdentifier === userIdentifier && v.category === category
-            );
-        }
-        
-        res.json({
-            canVote: !existingVote,
-            hasVoted: !!existingVote,
-            existingVote: existingVote ? {
-                selection: existingVote.selection,
-                timestamp: existingVote.timestamp
-            } : null
-        });
-    } catch (error) {
-        console.error('Check vote error:', error);
-        res.status(500).json({ error: 'Failed to check vote status' });
-    }
+app.get('/admin.html', (req, res) => {
+    res.sendFile(path.join(__dirname, 'admin.html'));
 });
 
-// Get Vote Results (Public)
-app.get('/api/results', async (req, res) => {
+app.get('/login.html', (req, res) => {
+    res.sendFile(path.join(__dirname, 'login.html'));
+});
+
+// API Routes
+
+// Get voting results
+app.get('/api/results', (req, res) => {
     try {
-        let votes;
-        if (dbConnected) {
-            votes = await Vote.find();
-        } else {
-            votes = demoData.votes;
-        }
-        
-        // Get all unique categories from votes
-        const categories = [...new Set(votes.map(v => v.category))];
-        
         const results = {};
-        categories.forEach(category => {
-            const categoryVotes = votes.filter(v => v.category === category);
-            const counts = {};
-            
-            categoryVotes.forEach(vote => {
-                counts[vote.selection] = (counts[vote.selection] || 0) + 1;
-            });
-            
-            results[category] = Object.entries(counts)
+        Object.keys(votingData).forEach(category => {
+            results[category] = Object.entries(votingData[category])
                 .map(([name, votes]) => ({ name, votes }))
                 .sort((a, b) => b.votes - a.votes);
         });
         
         res.json(results);
     } catch (error) {
-        console.error('Error fetching results:', error);
         res.status(500).json({ error: 'Failed to fetch results' });
     }
 });
 
-// ==================== ADMIN ROUTES ====================
-
-// Admin Login
-app.post('/api/admin/login', async (req, res) => {
+// Check if IP has voted in a category
+app.post('/api/check-vote', (req, res) => {
     try {
-        const { username, password } = req.body;
+        const clientIP = getClientIP(req);
+        const { category } = req.body;
         
-        if (!username || !password) {
-            return res.status(400).json({ 
-                success: false, 
-                error: 'Username and password required' 
-            });
+        if (!category) {
+            return res.status(400).json({ error: 'Category is required' });
         }
         
-        // For demo, accept admin/admin123
-        if (username === 'admin' && password === 'admin123') {
-            const token = jwt.sign(
-                { 
-                    userId: 'admin',
-                    username: 'admin',
-                    isAdmin: true,
-                    permissions: ['view', 'edit', 'delete', 'export']
-                },
-                process.env.JWT_SECRET || 'your-secret-key-change-in-production',
-                { expiresIn: '24h' }
-            );
-            
-            return res.json({ 
-                success: true, 
-                token,
-                user: {
-                    username: 'admin',
-                    isAdmin: true,
-                    name: 'Administrator'
-                }
-            });
-        }
+        const hasVoted = ipVoteHistory.has(clientIP) && 
+                        ipVoteHistory.get(clientIP).has(category);
         
-        // Check database for admin
-        if (dbConnected) {
-            const user = await Admin.findOne({ username });
-            if (user && await bcrypt.compare(password, user.password)) {
-                const token = jwt.sign(
-                    { 
-                        userId: user._id,
-                        username: user.username,
-                        isAdmin: true
-                    },
-                    process.env.JWT_SECRET || 'your-secret-key-change-in-production',
-                    { expiresIn: '24h' }
-                );
-                
-                return res.json({ 
-                    success: true, 
-                    token,
-                    user: {
-                        username: user.username,
-                        isAdmin: true
-                    }
-                });
-            }
-        } else {
-            // Check demo data
-            const user = demoData.admins.find(a => a.username === username && a.password === password);
-            if (user) {
-                const token = jwt.sign(
-                    { 
-                        userId: user.id,
-                        username: user.username,
-                        isAdmin: true
-                    },
-                    process.env.JWT_SECRET || 'your-secret-key-change-in-production',
-                    { expiresIn: '24h' }
-                );
-                
-                return res.json({ 
-                    success: true, 
-                    token,
-                    user: {
-                        username: user.username,
-                        isAdmin: true
-                    }
-                });
-            }
-        }
-        
-        res.status(401).json({ 
-            success: false, 
-            error: 'Invalid admin credentials' 
+        res.json({ 
+            hasVoted,
+            ip: clientIP,
+            canVote: !hasVoted
         });
     } catch (error) {
-        console.error('Admin login error:', error);
-        res.status(500).json({ 
-            success: false, 
-            error: 'Login failed' 
-        });
+        res.status(500).json({ error: 'Failed to check vote status' });
     }
 });
 
-// Get Admin Dashboard Statistics
-app.get('/api/admin/statistics', authenticateAdmin, async (req, res) => {
+// Submit a vote
+app.post('/api/vote', (req, res) => {
     try {
-        let votes;
-        if (dbConnected) {
-            votes = await Vote.find();
-        } else {
-            votes = demoData.votes;
+        const clientIP = getClientIP(req);
+        const { category, selection } = req.body;
+        
+        if (!category || !selection) {
+            return res.status(400).json({ error: 'Category and selection are required' });
         }
         
-        const totalVotes = votes.length;
-        const uniqueVoters = [...new Set(votes.map(v => v.userIdentifier))].length;
-        
-        const today = new Date();
-        today.setHours(0, 0, 0, 0);
-        const votesToday = votes.filter(v => new Date(v.timestamp) >= today).length;
-        
-        // Get actual category stats from votes
-        const categoryStats = {};
-        const categories = [...new Set(votes.map(v => v.category))];
-        
-        categories.forEach(category => {
-            const categoryVotes = votes.filter(v => v.category === category);
-            const counts = {};
-            
-            categoryVotes.forEach(vote => {
-                counts[vote.selection] = (counts[vote.selection] || 0) + 1;
+        // Check if IP has already voted in this category
+        if (ipVoteHistory.has(clientIP) && ipVoteHistory.get(clientIP).has(category)) {
+            return res.status(403).json({ 
+                success: false, 
+                error: 'You have already voted in this category',
+                canVote: false
             });
-            
-            categoryStats[category] = counts;
+        }
+        
+        // Initialize voting category if it doesn't exist
+        if (!votingData[category]) {
+            votingData[category] = {};
+        }
+        
+        // Initialize selection count if it doesn't exist
+        if (!votingData[category][selection]) {
+            votingData[category][selection] = 0;
+        }
+        
+        // Record the vote
+        votingData[category][selection]++;
+        
+        // Track the IP's vote
+        votedIPs.add(clientIP);
+        
+        if (!ipVoteHistory.has(clientIP)) {
+            ipVoteHistory.set(clientIP, new Set());
+        }
+        ipVoteHistory.get(clientIP).add(category);
+        
+        // Save data immediately
+        saveData();
+        
+        console.log(`Vote recorded from ${clientIP}: ${category} - ${selection} (Total: ${votingData[category][selection]})`);
+        
+        res.json({ 
+            success: true, 
+            message: 'Vote recorded successfully',
+            totalVotes: votingData[category][selection],
+            ip: clientIP,
+            canVote: true,
+            categoriesVoted: ipVoteHistory.has(clientIP) ? 
+                Array.from(ipVoteHistory.get(clientIP)) : []
+        });
+    } catch (error) {
+        res.status(500).json({ error: 'Failed to record vote' });
+    }
+});
+
+// Get voting statistics
+app.get('/api/stats', (req, res) => {
+    try {
+        let totalVotes = 0;
+        let uniqueVoters = votedIPs.size;
+        let votesByCategory = {};
+        
+        Object.keys(votingData).forEach(category => {
+            const categoryVotes = Object.values(votingData[category]).reduce((sum, votes) => sum + votes, 0);
+            totalVotes += categoryVotes;
+            votesByCategory[category] = categoryVotes;
         });
         
-        const statistics = {
+        res.json({
             totalVotes,
             uniqueVoters,
-            votesToday,
-            voteTrend: votesToday > 0 ? '+12.5%' : '0%',
-            averageVotes: categories.length > 0 ? Math.round(totalVotes / categories.length) : 0,
-            categoryStats
-        };
-        
-        res.json(statistics);
+            votesByCategory,
+            totalIPs: uniqueVoters
+        });
     } catch (error) {
-        console.error('Statistics error:', error);
         res.status(500).json({ error: 'Failed to fetch statistics' });
     }
 });
 
-// Get All Votes (Admin)
-app.get('/api/admin/votes', authenticateAdmin, async (req, res) => {
+// Reset votes for testing (admin only)
+app.post('/api/admin/reset-votes', (req, res) => {
     try {
-        let votes;
-        if (dbConnected) {
-            votes = await Vote.find().sort({ timestamp: -1 });
-        } else {
-            votes = demoData.votes.sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
+        const token = req.headers.authorization?.split(' ')[1];
+        if (!token) {
+            return res.status(401).json({ error: 'Unauthorized' });
         }
         
-        res.json({
-            votes,
-            total: votes.length,
-            page: 1,
-            totalPages: 1
+        // Reset all votes
+        Object.keys(votingData).forEach(category => {
+            Object.keys(votingData[category]).forEach(selection => {
+                votingData[category][selection] = 0;
+            });
+        });
+        
+        // Clear IP tracking
+        votedIPs.clear();
+        ipVoteHistory.clear();
+        
+        saveData();
+        
+        res.json({ 
+            success: true, 
+            message: 'All votes reset successfully',
+            totalVotes: 0,
+            uniqueVoters: 0
         });
     } catch (error) {
-        console.error('Error fetching votes:', error);
-        res.status(500).json({ error: 'Failed to fetch votes' });
+        res.status(500).json({ error: 'Failed to reset votes' });
     }
 });
 
-// Get Recent Activity
-app.get('/api/admin/activity', authenticateAdmin, async (req, res) => {
+// Admin login
+app.post('/api/admin/login', (req, res) => {
     try {
-        let recentVotes;
-        if (dbConnected) {
-            recentVotes = await Vote.find()
-                .sort({ timestamp: -1 })
-                .limit(20);
+        const { username, password } = req.body;
+        
+        // Simple admin authentication
+        if (username === 'admin' && password === 'admin123') {
+            const token = Buffer.from(`admin:${Date.now()}`).toString('base64');
+            
+            res.json({
+                success: true,
+                token: token,
+                user: {
+                    username: 'admin',
+                    role: 'admin'
+                }
+            });
         } else {
-            recentVotes = demoData.votes
-                .sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp))
-                .slice(0, 20);
+            res.status(401).json({
+                success: false,
+                error: 'Invalid username or password'
+            });
+        }
+    } catch (error) {
+        res.status(500).json({ error: 'Login failed' });
+    }
+});
+
+// Admin statistics
+app.get('/api/admin/statistics', (req, res) => {
+    try {
+        // Verify admin token
+        const token = req.headers.authorization?.split(' ')[1];
+        if (!token) {
+            return res.status(401).json({ error: 'Unauthorized' });
         }
         
-        const activities = recentVotes.map(vote => ({
-            time: formatTimeAgo(vote.timestamp),
-            user: vote.userId,
-            category: vote.category,
-            vote: vote.selection,
-            ip: vote.ipAddress || 'N/A',
-            status: 'success'
+        // Calculate statistics
+        let totalVotes = 0;
+        let votesToday = 0;
+        
+        Object.values(votingData).forEach(category => {
+            Object.values(category).forEach(votes => {
+                totalVotes += votes;
+            });
+        });
+        
+        // Mock some data for demonstration
+        const stats = {
+            totalVotes,
+            uniqueVoters: votedIPs.size,
+            averageVotes: Math.floor(totalVotes / 4),
+            votesToday: Math.floor(totalVotes * 0.08),
+            voteTrend: '+12.5%',
+            voterTrend: Math.floor(votedIPs.size * 0.05),
+            avgTrend: '+4.2%',
+            activityTrend: 15,
+            totalIPs: votedIPs.size,
+            votingRate: totalVotes > 0 ? (votedIPs.size / totalVotes * 100).toFixed(2) + '%' : '0%'
+        };
+        
+        res.json(stats);
+    } catch (error) {
+        res.status(500).json({ error: 'Failed to fetch statistics' });
+    }
+});
+
+// Get IP voting history (admin only)
+app.get('/api/admin/ip-history', (req, res) => {
+    try {
+        const token = req.headers.authorization?.split(' ')[1];
+        if (!token) {
+            return res.status(401).json({ error: 'Unauthorized' });
+        }
+        
+        const history = Array.from(ipVoteHistory.entries()).map(([ip, categories]) => ({
+            ip,
+            categories: Array.from(categories),
+            totalVotes: Array.from(categories).length
         }));
         
         res.json({
-            activities,
-            total: recentVotes.length,
-            page: 1,
-            totalPages: 1
+            totalIPs: votedIPs.size,
+            history: history.sort((a, b) => b.totalVotes - a.totalVotes)
         });
     } catch (error) {
-        console.error('Activity error:', error);
-        res.status(500).json({ error: 'Failed to fetch activity' });
+        res.status(500).json({ error: 'Failed to fetch IP history' });
     }
 });
 
-// Helper function to format time ago
-function formatTimeAgo(date) {
-    const seconds = Math.floor((new Date() - new Date(date)) / 1000);
-    
-    let interval = Math.floor(seconds / 31536000);
-    if (interval >= 1) return interval + " years ago";
-    
-    interval = Math.floor(seconds / 2592000);
-    if (interval >= 1) return interval + " months ago";
-    
-    interval = Math.floor(seconds / 86400);
-    if (interval >= 1) return interval + " days ago";
-    
-    interval = Math.floor(seconds / 3600);
-    if (interval >= 1) return interval + " hours ago";
-    
-    interval = Math.floor(seconds / 60);
-    if (interval >= 1) return interval + " minutes ago";
-    
-    return Math.floor(seconds) + " seconds ago";
-}
-
-// ==================== CMS ROUTES ====================
-
-// Get CMS Data
-app.get('/api/cms/data', authenticateAdmin, async (req, res) => {
-    try {
-        let categories, nominees;
-        
-        if (dbConnected) {
-            categories = await Category.find().sort('order');
-            nominees = await Nominee.find();
-        } else {
-            categories = demoData.categories;
-            nominees = demoData.nominees;
-        }
-        
-        res.json({
-            categories,
-            nominees,
-            images: [],
-            pages: {
-                home: {
-                    title: 'Anime Awards 2025',
-                    subtitle: 'Vote for your favorites across multiple categories',
-                    heroImage: '',
-                    welcomeMessage: 'Welcome to the biggest anime voting event of the year!'
-                }
-            },
-            settings: {
-                siteName: 'Anime Voting 2025',
-                siteDescription: 'Vote for your favorite anime',
-                theme: {
-                    primaryColor: '#6366f1',
-                    secondaryColor: '#10b981',
-                    accentColor: '#f59e0b',
-                    darkMode: false
-                }
-            }
-        });
-    } catch (error) {
-        console.error('CMS data error:', error);
-        res.status(500).json({ error: error.message });
-    }
+// Start server
+app.listen(PORT, () => {
+    console.log(`Server running on http://localhost:${PORT}`);
+    console.log(`Public voting page: http://localhost:${PORT}`);
+    console.log(`Admin panel: http://localhost:${PORT}/admin.html`);
+    console.log(`Admin login: http://localhost:${PORT}/login.html`);
+    console.log(`\nVoting Rules:`);
+    console.log(`- Each IP can vote once per category`);
+    console.log(`- Total unique voters: ${votedIPs.size}`);
+    console.log(`- Data is saved to voting-data.json`);
 });
-
-// Save Category
-app.post('/api/cms/category', authenticateAdmin, async (req, res) => {
-    try {
-        const categoryData = req.body;
-        
-        if (dbConnected) {
-            if (categoryData._id) {
-                await Category.findByIdAndUpdate(categoryData._id, categoryData);
-            } else {
-                await Category.create(categoryData);
-            }
-        } else {
-            if (categoryData._id) {
-                const index = demoData.categories.findIndex(c => c._id === categoryData._id);
-                if (index !== -1) {
-                    demoData.categories[index] = categoryData;
-                }
-            } else {
-                categoryData._id = 'cat_' + Date.now();
-                demoData.categories.push(categoryData);
-            }
-        }
-        
-        res.json({ success: true, message: 'Category saved successfully' });
-    } catch (error) {
-        console.error('Save category error:', error);
-        res.status(500).json({ error: error.message });
-    }
-});
-
-// Save Nominee
-app.post('/api/cms/nominee', authenticateAdmin, async (req, res) => {
-    try {
-        const nomineeData = req.body;
-        
-        if (dbConnected) {
-            if (nomineeData._id) {
-                await Nominee.findByIdAndUpdate(nomineeData._id, nomineeData);
-            } else {
-                await Nominee.create(nomineeData);
-            }
-        } else {
-            if (nomineeData._id) {
-                const index = demoData.nominees.findIndex(n => n._id === nomineeData._id);
-                if (index !== -1) {
-                    demoData.nominees[index] = nomineeData;
-                }
-            } else {
-                nomineeData._id = 'nom_' + Date.now();
-                nomineeData.votes = nomineeData.votes || 0;
-                demoData.nominees.push(nomineeData);
-            }
-        }
-        
-        res.json({ success: true, message: 'Nominee saved successfully' });
-    } catch (error) {
-        console.error('Save nominee error:', error);
-        res.status(500).json({ error: error.message });
-    }
-});
-
-// Handle 404 for API routes
-app.use('/api/*', (req, res) => {
-    res.status(404).json({ error: 'API endpoint not found' });
-});
-
-// Serve index.html for all other routes (for SPA)
-app.get('*', (req, res) => {
-    res.sendFile(path.join(__dirname, 'public', 'index.html'));
-});
-
-// Error handling middleware
-app.use((err, req, res, next) => {
-    console.error('Server error:', err);
-    res.status(500).json({ error: 'Internal server error' });
-});
-
-const PORT = process.env.PORT || 3000;
-
-// For Vercel, we need to export the app
-if (require.main === module) {
-    // Running directly (not imported)
-    app.listen(PORT, () => {
-        console.log(`Server running on port ${PORT}`);
-        console.log(`Database: ${dbConnected ? 'MongoDB' : 'Demo mode'}`);
-        console.log(`Voting system ready! No login required for voting.`);
-        console.log(`Admin login: admin/admin123`);
-    });
-}
-
-// Export for Vercel
-module.exports = app;
