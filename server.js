@@ -17,10 +17,8 @@ app.use(cors({
         if (!origin) return callback(null, true);
         
         const allowedOrigins = [
-            'https://aniem-9n8sxeckl-erennews-projects.vercel.app',
-            'https://aniem-ashen.vercel.app',
-            'https://aniem-git-main-erennews-projects.vercel.app',
-            'https://aniem.vercel.app',
+            'https://aniem-seven.vercel.app',
+            'https://aniem-7mjyn9to7-erennews-projects.vercel.app',
             'http://localhost:3000',
             'http://localhost:3001'
         ];
