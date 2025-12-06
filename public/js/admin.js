@@ -1,688 +1,593 @@
-// Admin Dashboard - Complete Implementation
-let adminData = null;
-let voteChart = null;
-let categoryChart = null;
-let currentPage = 1;
-let itemsPerPage = 10;
-let totalActivities = 0;
-
-// Initialize admin dashboard
-async function initAdmin() {
-    // Check authentication
-    if (!checkAdminAuth()) {
-        redirectToLogin();
-        return;
-    }
-    
-    // Show loading
-    showLoading(true);
-    
-    try {
-        // Load all data
-        await Promise.all([
-            loadDashboardData(),
-            loadVotingResults(),
-            loadRecentActivity(),
-            loadSystemInfo()
-        ]);
+[file name]: admin-fixed.html
+[file content begin]
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Admin Dashboard - Anime Voting System</title>
+    <link rel="stylesheet" href="/css/admin.css">
+    <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@300;400;500;700;900&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <style>
+        /* Additional styles for admin dashboard */
+        .admin-container {
+            padding: 20px;
+            max-width: 1400px;
+            margin: 0 auto;
+        }
         
-        // Initialize charts
-        initCharts();
+        .dashboard-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+            gap: 20px;
+            margin-bottom: 30px;
+        }
         
-        // Setup event listeners
-        setupEventListeners();
+        .dashboard-card {
+            background: white;
+            border-radius: 10px;
+            padding: 20px;
+            box-shadow: 0 4px 15px rgba(0,0,0,0.1);
+            transition: transform 0.3s;
+        }
         
-        // Update welcome message
-        updateWelcomeMessage();
+        .dashboard-card:hover {
+            transform: translateY(-5px);
+        }
         
-        // Start auto-refresh
-        startAutoRefresh();
+        .card-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 15px;
+        }
         
-    } catch (error) {
-        console.error('Failed to initialize admin:', error);
-        showNotification('Failed to load dashboard data', 'error');
-    } finally {
-        showLoading(false);
-    }
-}
+        .card-icon {
+            width: 50px;
+            height: 50px;
+            border-radius: 10px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: white;
+            font-size: 1.5rem;
+        }
+        
+        .icon-votes { background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); }
+        .icon-users { background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%); }
+        .icon-theme { background: linear-gradient(135deg, #4facfe 0%, #00f2fe 100%); }
+        .icon-settings { background: linear-gradient(135deg, #43e97b 0%, #38f9d7 100%); }
+        
+        .card-stats {
+            font-size: 2rem;
+            font-weight: 700;
+            margin: 10px 0;
+            color: #333;
+        }
+        
+        .card-trend {
+            display: flex;
+            align-items: center;
+            gap: 5px;
+            font-size: 0.9rem;
+        }
+        
+        .trend-up { color: #10b981; }
+        .trend-down { color: #ef4444; }
+        
+        .section-title {
+            font-size: 1.5rem;
+            margin: 30px 0 20px 0;
+            padding-bottom: 10px;
+            border-bottom: 2px solid #f0f0f0;
+            color: #333;
+        }
+        
+        .charts-container {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 20px;
+            margin-bottom: 30px;
+        }
+        
+        @media (max-width: 768px) {
+            .charts-container {
+                grid-template-columns: 1fr;
+            }
+        }
+        
+        .chart-card {
+            background: white;
+            border-radius: 10px;
+            padding: 20px;
+            box-shadow: 0 4px 15px rgba(0,0,0,0.1);
+        }
+        
+        .chart-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 20px;
+        }
+        
+        .chart-actions button {
+            background: none;
+            border: 1px solid #ddd;
+            padding: 5px 10px;
+            border-radius: 5px;
+            cursor: pointer;
+            margin-left: 5px;
+        }
+        
+        .users-table-container {
+            overflow-x: auto;
+            background: white;
+            border-radius: 10px;
+            padding: 20px;
+            margin-bottom: 30px;
+            box-shadow: 0 4px 15px rgba(0,0,0,0.1);
+        }
+        
+        .users-table {
+            width: 100%;
+            border-collapse: collapse;
+        }
+        
+        .users-table th {
+            background: #f8f9fa;
+            padding: 12px;
+            text-align: left;
+            font-weight: 600;
+            color: #495057;
+            border-bottom: 2px solid #dee2e6;
+        }
+        
+        .users-table td {
+            padding: 12px;
+            border-bottom: 1px solid #dee2e6;
+        }
+        
+        .user-role {
+            padding: 4px 8px;
+            border-radius: 4px;
+            font-size: 0.85rem;
+            font-weight: 500;
+        }
+        
+        .user-role.admin {
+            background: #dbeafe;
+            color: #1e40af;
+        }
+        
+        .user-role.user {
+            background: #f0fdf4;
+            color: #166534;
+        }
+        
+        .user-status {
+            padding: 4px 8px;
+            border-radius: 4px;
+            font-size: 0.85rem;
+            font-weight: 500;
+        }
+        
+        .user-status.active {
+            background: #d1fae5;
+            color: #065f46;
+        }
+        
+        .user-status.inactive {
+            background: #fef3c7;
+            color: #92400e;
+        }
+        
+        .themes-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(250px, 1fr));
+            gap: 20px;
+            margin-bottom: 30px;
+        }
+        
+        .theme-card {
+            background: white;
+            border-radius: 10px;
+            overflow: hidden;
+            box-shadow: 0 4px 15px rgba(0,0,0,0.1);
+            transition: transform 0.3s;
+        }
+        
+        .theme-card:hover {
+            transform: translateY(-5px);
+        }
+        
+        .theme-card.active {
+            border: 2px solid #667eea;
+        }
+        
+        .theme-preview {
+            height: 100px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        }
+        
+        .theme-info {
+            padding: 15px;
+        }
+        
+        .theme-actions {
+            display: flex;
+            gap: 10px;
+            margin-top: 10px;
+        }
+        
+        .badge-active {
+            background: #10b981;
+            color: white;
+            padding: 4px 8px;
+            border-radius: 4px;
+            font-size: 0.85rem;
+        }
+        
+        .settings-form {
+            background: white;
+            border-radius: 10px;
+            padding: 20px;
+            box-shadow: 0 4px 15px rgba(0,0,0,0.1);
+            margin-bottom: 30px;
+        }
+        
+        .form-group {
+            margin-bottom: 20px;
+        }
+        
+        .form-group label {
+            display: block;
+            margin-bottom: 8px;
+            font-weight: 500;
+            color: #495057;
+        }
+        
+        .form-group input[type="text"],
+        .form-group input[type="date"],
+        .form-group textarea {
+            width: 100%;
+            padding: 10px;
+            border: 1px solid #dee2e6;
+            border-radius: 5px;
+            font-size: 1rem;
+        }
+        
+        .form-group textarea {
+            min-height: 100px;
+            resize: vertical;
+        }
+        
+        .form-actions {
+            display: flex;
+            gap: 10px;
+            margin-top: 20px;
+        }
+        
+        .layout-settings {
+            background: white;
+            border-radius: 10px;
+            padding: 20px;
+            box-shadow: 0 4px 15px rgba(0,0,0,0.1);
+            margin-bottom: 30px;
+        }
+        
+        .layout-options {
+            display: flex;
+            gap: 20px;
+            margin-top: 15px;
+        }
+        
+        .layout-option {
+            flex: 1;
+            border: 2px solid #dee2e6;
+            border-radius: 8px;
+            padding: 15px;
+            text-align: center;
+            cursor: pointer;
+            transition: all 0.3s;
+        }
+        
+        .layout-option:hover,
+        .layout-option.active {
+            border-color: #667eea;
+            background: #f8f9ff;
+        }
+        
+        .layout-option i {
+            font-size: 2rem;
+            color: #667eea;
+            margin-bottom: 10px;
+        }
+        
+        .btn-small {
+            padding: 6px 12px;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+            font-size: 0.9rem;
+            display: inline-flex;
+            align-items: center;
+            gap: 5px;
+        }
+        
+        .btn-success {
+            background: #10b981;
+            color: white;
+        }
+        
+        .btn-warning {
+            background: #f59e0b;
+            color: white;
+        }
+        
+        .btn-danger {
+            background: #ef4444;
+            color: white;
+        }
+        
+        .btn-primary {
+            background: #667eea;
+            color: white;
+            padding: 10px 20px;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+            font-weight: 500;
+        }
+        
+        .btn-secondary {
+            background: #6c757d;
+            color: white;
+            padding: 10px 20px;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+        }
+    </style>
+</head>
+<body>
+    <!-- Admin Header -->
+    <header class="admin-header">
+        <div class="admin-header-content">
+            <div class="header-left">
+                <h1><i class="fas fa-chart-bar"></i> Admin Dashboard</h1>
+                <p>Anime Voting System Analytics</p>
+            </div>
+            <div class="admin-controls">
+                <button id="logoutAdmin" class="btn-logout">
+                    <i class="fas fa-sign-out-alt"></i> Logout
+                </button>
+            </div>
+        </div>
+    </header>
 
-// Check admin authentication
-function checkAdminAuth() {
-    const token = localStorage.getItem('adminToken');
-    const expiry = localStorage.getItem('adminTokenExpiry');
-    
-    if (!token || !expiry) {
-        return false;
-    }
-    
-    if (Date.now() > parseInt(expiry)) {
-        localStorage.removeItem('adminToken');
-        localStorage.removeItem('adminTokenExpiry');
-        return false;
-    }
-    
-    return true;
-}
-
-// Redirect to login page
-function redirectToLogin() {
-    window.location.href = 'login.html';
-}
-
-// Load dashboard data
-async function loadDashboardData() {
-    // Simulate API call - replace with actual API endpoint
-    const mockData = {
-        totalVotes: 1568,
-        uniqueVoters: 423,
-        averageVotes: 392,
-        votesToday: 128,
-        voteTrend: '+12.5%',
-        voterTrend: 28,
-        avgTrend: '+4.2%',
-        activityTrend: 15
-    };
-    
-    // Update UI with data
-    document.getElementById('totalVotes').textContent = mockData.totalVotes.toLocaleString();
-    document.getElementById('uniqueVoters').textContent = mockData.uniqueVoters.toLocaleString();
-    document.getElementById('averageVotes').textContent = mockData.averageVotes.toLocaleString();
-    document.getElementById('votesToday').textContent = mockData.votesToday;
-    document.getElementById('voteTrend').textContent = mockData.voteTrend;
-    document.getElementById('voterTrend').textContent = mockData.voterTrend;
-    document.getElementById('avgTrend').textContent = mockData.avgTrend;
-    document.getElementById('activityTrend').textContent = mockData.activityTrend;
-    
-    adminData = mockData;
-}
-
-// Load voting results
-async function loadVotingResults() {
-    // Simulate API call - replace with actual API endpoint
-    const mockResults = {
-        anime: [
-            { name: 'Attack on Titan: Final Season', votes: 456, percentage: 29.1 },
-            { name: 'Jujutsu Kaisen', votes: 389, percentage: 24.8 },
-            { name: 'Demon Slayer: Mugen Train', votes: 342, percentage: 21.8 },
-            { name: 'Re:Zero Season 3', votes: 212, percentage: 13.5 },
-            { name: 'Other', votes: 169, percentage: 10.8 }
-        ],
-        studio: [
-            { name: 'MAPPA', votes: 623, percentage: 39.7 },
-            { name: 'Ufotable', votes: 512, percentage: 32.6 },
-            { name: 'Kyoto Animation', votes: 433, percentage: 27.7 }
-        ],
-        actor: [
-            { name: 'Yuki Kaji', votes: 567, percentage: 36.2 },
-            { name: 'Natsuki Hanae', votes: 489, percentage: 31.2 },
-            { name: 'Jun Fukuyama', votes: 398, percentage: 25.4 },
-            { name: 'Other', votes: 114, percentage: 7.2 }
-        ],
-        anticipated: [
-            { name: 'Attack on Titan: The Final Battle', votes: 845, percentage: 53.9 },
-            { name: 'Chainsaw Man Season 2', votes: 723, percentage: 46.1 }
-        ]
-    };
-    
-    // Update results displays
-    updateResultsDisplay('anime', mockResults.anime);
-    updateResultsDisplay('studio', mockResults.studio);
-    updateResultsDisplay('actor', mockResults.actor);
-    updateResultsDisplay('anticipated', mockResults.anticipated);
-}
-
-// Update results display
-function updateResultsDisplay(category, results) {
-    const container = document.getElementById(`${category}Results`).querySelector('.results-list');
-    
-    container.innerHTML = results.map((result, index) => `
-        <div class="result-item">
-            <div class="result-rank">${index + 1}</div>
-            <div class="result-info">
-                <div class="result-name">${result.name}</div>
-                <div class="result-stats">
-                    <span class="vote-count">
+    <!-- Main Content -->
+    <main class="admin-container">
+        <!-- Welcome Banner -->
+        <div class="welcome-banner">
+            <h2><i class="fas fa-user-shield"></i> Welcome, Administrator</h2>
+            <p>Last login: Today at <span id="currentTime"></span></p>
+        </div>
+        
+        <!-- Quick Stats -->
+        <h2 class="section-title"><i class="fas fa-tachometer-alt"></i> Quick Stats</h2>
+        <div class="dashboard-grid">
+            <div class="dashboard-card">
+                <div class="card-header">
+                    <h3>Total Votes</h3>
+                    <div class="card-icon icon-votes">
                         <i class="fas fa-vote-yea"></i>
-                        ${result.votes.toLocaleString()} votes
-                    </span>
-                    <span class="vote-percentage">${result.percentage}%</span>
+                    </div>
                 </div>
-                <div class="vote-progress">
-                    <div class="vote-progress-bar" style="width: ${result.percentage}%"></div>
+                <div class="card-stats" id="totalVotes">0</div>
+                <div class="card-trend trend-up">
+                    <i class="fas fa-arrow-up"></i>
+                    <span id="voteTrend">+0%</span> from yesterday
+                </div>
+            </div>
+            
+            <div class="dashboard-card">
+                <div class="card-header">
+                    <h3>Unique Voters</h3>
+                    <div class="card-icon icon-users">
+                        <i class="fas fa-users"></i>
+                    </div>
+                </div>
+                <div class="card-stats" id="uniqueVoters">0</div>
+                <div class="card-trend trend-up">
+                    <i class="fas fa-user-plus"></i>
+                    <span id="voterTrend">0</span> new today
+                </div>
+            </div>
+            
+            <div class="dashboard-card">
+                <div class="card-header">
+                    <h3>Avg. Votes</h3>
+                    <div class="card-icon icon-votes">
+                        <i class="fas fa-chart-line"></i>
+                    </div>
+                </div>
+                <div class="card-stats" id="averageVotes">0</div>
+                <div class="card-trend trend-up">
+                    <i class="fas fa-chart-line"></i>
+                    <span id="avgTrend">+0%</span> increase
+                </div>
+            </div>
+            
+            <div class="dashboard-card">
+                <div class="card-header">
+                    <h3>Today's Votes</h3>
+                    <div class="card-icon icon-votes">
+                        <i class="fas fa-calendar-day"></i>
+                    </div>
+                </div>
+                <div class="card-stats" id="votesToday">0</div>
+                <div class="card-trend trend-up">
+                    <i class="fas fa-bolt"></i>
+                    <span id="activityTrend">0</span> active
                 </div>
             </div>
         </div>
-    `).join('');
-}
-
-// Load recent activity
-async function loadRecentActivity(page = 1) {
-    // Simulate API call - replace with actual API endpoint
-    const mockActivities = [
-        { time: '2 minutes ago', user: 'anime_lover_42', category: 'Best Anime', vote: 'Attack on Titan', ip: '192.168.1.1', status: 'success' },
-        { time: '5 minutes ago', user: 'weeb_king', category: 'Best Studio', vote: 'MAPPA', ip: '10.0.0.5', status: 'success' },
-        { time: '12 minutes ago', user: 'otaku_girl', category: 'Best Actor', vote: 'Yuki Kaji', ip: '172.16.0.8', status: 'success' },
-        { time: '25 minutes ago', user: 'demo_user', category: 'Most Anticipated', vote: 'Chainsaw Man', ip: '203.0.113.42', status: 'success' },
-        { time: '1 hour ago', user: 'anonymous', category: 'Best Anime', vote: 'Jujutsu Kaisen', ip: '192.168.100.10', status: 'warning' },
-        { time: '2 hours ago', user: 'voter123', category: 'Best Studio', vote: 'Ufotable', ip: '10.1.1.15', status: 'success' },
-        { time: '3 hours ago', user: 'anime_fan', category: 'Best Actor', vote: 'Natsuki Hanae', ip: '192.168.0.25', status: 'success' },
-        { time: '5 hours ago', user: 'test_account', category: 'Most Anticipated', vote: 'Attack on Titan', ip: '198.51.100.1', status: 'success' },
-        { time: '6 hours ago', user: 'weeb_master', category: 'Best Anime', vote: 'Demon Slayer', ip: '203.0.113.5', status: 'success' },
-        { time: '8 hours ago', user: 'otaku_sama', category: 'Best Studio', vote: 'Kyoto Animation', ip: '192.168.1.100', status: 'success' }
-    ];
-    
-    totalActivities = 42; // Mock total
-    
-    // Filter activities based on current filters
-    const timeFilter = document.getElementById('timeFilter').value;
-    const categoryFilter = document.getElementById('categoryFilter').value;
-    
-    let filteredActivities = [...mockActivities];
-    
-    // Apply time filter (simplified)
-    if (timeFilter !== 'all') {
-        // In real implementation, filter by actual timestamps
-    }
-    
-    // Apply category filter
-    if (categoryFilter !== 'all') {
-        filteredActivities = filteredActivities.filter(activity => 
-            activity.category === categoryFilter
-        );
-    }
-    
-    // Calculate pagination
-    const startIndex = (page - 1) * itemsPerPage;
-    const endIndex = startIndex + itemsPerPage;
-    const paginatedActivities = filteredActivities.slice(startIndex, endIndex);
-    
-    // Update activity table
-    const tableBody = document.getElementById('activityTable');
-    tableBody.innerHTML = paginatedActivities.map(activity => `
-        <tr>
-            <td>${activity.time}</td>
-            <td>${activity.user}</td>
-            <td>${activity.category}</td>
-            <td><strong>${activity.vote}</strong></td>
-            <td><code>${activity.ip}</code></td>
-            <td>
-                <span class="status-badge ${activity.status}">
-                    ${activity.status === 'success' ? '✓ Success' : '⚠ Warning'}
-                </span>
-            </td>
-        </tr>
-    `).join('');
-    
-    // Update pagination controls
-    updatePagination(page, Math.ceil(filteredActivities.length / itemsPerPage));
-}
-
-// Load system information
-async function loadSystemInfo() {
-    // Simulate API call - replace with actual API endpoint
-    const mockSystemInfo = {
-        dbRecords: '1,568',
-        dbStorage: '4.2 MB',
-        lastBackup: 'Today, 02:00',
-        activeSessions: 3,
-        failedLogins: 2,
-        lastAudit: 'Yesterday',
-        responseTime: '45 ms',
-        systemUptime: '5d 12h 30m',
-        memoryUsage: '42%'
-    };
-    
-    // Update UI
-    document.getElementById('dbRecords').textContent = mockSystemInfo.dbRecords;
-    document.getElementById('dbStorage').textContent = mockSystemInfo.dbStorage;
-    document.getElementById('lastBackup').textContent = mockSystemInfo.lastBackup;
-    document.getElementById('activeSessions').textContent = mockSystemInfo.activeSessions;
-    document.getElementById('failedLogins').textContent = mockSystemInfo.failedLogins;
-    document.getElementById('lastAudit').textContent = mockSystemInfo.lastAudit;
-    document.getElementById('responseTime').textContent = mockSystemInfo.responseTime;
-    document.getElementById('systemUptime').textContent = mockSystemInfo.systemUptime;
-    document.getElementById('memoryUsage').textContent = mockSystemInfo.memoryUsage;
-}
-
-// Initialize charts
-function initCharts() {
-    // Destroy existing charts if they exist
-    if (voteChart) {
-        voteChart.destroy();
-    }
-    if (categoryChart) {
-        categoryChart.destroy();
-    }
-    
-    // Vote Distribution Chart
-    const voteCtx = document.getElementById('voteChart').getContext('2d');
-    voteChart = new Chart(voteCtx, {
-        type: 'bar',
-        data: {
-            labels: ['Attack on Titan', 'Jujutsu Kaisen', 'Demon Slayer', 'Re:Zero', 'MAPPA', 'Ufotable', 'Kyoto Animation', 'Yuki Kaji', 'Natsuki Hanae', 'Jun Fukuyama'],
-            datasets: [{
-                label: 'Votes',
-                data: [456, 389, 342, 212, 623, 512, 433, 567, 489, 398],
-                backgroundColor: [
-                    'rgba(99, 102, 241, 0.7)',
-                    'rgba(16, 185, 129, 0.7)',
-                    'rgba(245, 158, 11, 0.7)',
-                    'rgba(239, 68, 68, 0.7)',
-                    'rgba(139, 92, 246, 0.7)',
-                    'rgba(14, 165, 233, 0.7)',
-                    'rgba(236, 72, 153, 0.7)',
-                    'rgba(20, 184, 166, 0.7)',
-                    'rgba(249, 115, 22, 0.7)',
-                    'rgba(168, 85, 247, 0.7)'
-                ],
-                borderColor: [
-                    'rgba(99, 102, 241, 1)',
-                    'rgba(16, 185, 129, 1)',
-                    'rgba(245, 158, 11, 1)',
-                    'rgba(239, 68, 68, 1)',
-                    'rgba(139, 92, 246, 1)',
-                    'rgba(14, 165, 233, 1)',
-                    'rgba(236, 72, 153, 1)',
-                    'rgba(20, 184, 166, 1)',
-                    'rgba(249, 115, 22, 1)',
-                    'rgba(168, 85, 247, 1)'
-                ],
-                borderWidth: 1
-            }]
-        },
-        options: {
-            responsive: true,
-            maintainAspectRatio: false,
-            plugins: {
-                legend: {
-                    display: false
-                },
-                tooltip: {
-                    callbacks: {
-                        label: function(context) {
-                            return `Votes: ${context.raw}`;
-                        }
-                    }
-                }
-            },
-            scales: {
-                y: {
-                    beginAtZero: true,
-                    title: {
-                        display: true,
-                        text: 'Number of Votes'
-                    }
-                },
-                x: {
-                    ticks: {
-                        maxRotation: 45,
-                        minRotation: 45
-                    }
-                }
-            }
-        }
-    });
-    
-    // Category Comparison Chart
-    const categoryCtx = document.getElementById('categoryChart').getContext('2d');
-    categoryChart = new Chart(categoryCtx, {
-        type: 'pie',
-        data: {
-            labels: ['Best Anime', 'Best Studio', 'Best Actor', 'Most Anticipated'],
-            datasets: [{
-                data: [1399, 1568, 1568, 1568],
-                backgroundColor: [
-                    'rgba(99, 102, 241, 0.7)',
-                    'rgba(16, 185, 129, 0.7)',
-                    'rgba(245, 158, 11, 0.7)',
-                    'rgba(239, 68, 68, 0.7)'
-                ],
-                borderColor: [
-                    'rgba(99, 102, 241, 1)',
-                    'rgba(16, 185, 129, 1)',
-                    'rgba(245, 158, 11, 1)',
-                    'rgba(239, 68, 68, 1)'
-                ],
-                borderWidth: 1
-            }]
-        },
-        options: {
-            responsive: true,
-            maintainAspectRatio: false,
-            plugins: {
-                legend: {
-                    position: 'right',
-                },
-                tooltip: {
-                    callbacks: {
-                        label: function(context) {
-                            const total = context.dataset.data.reduce((a, b) => a + b, 0);
-                            const percentage = Math.round((context.raw / total) * 100);
-                            return `${context.label}: ${context.raw} votes (${percentage}%)`;
-                        }
-                    }
-                }
-            }
-        }
-    });
-}
-
-// Setup event listeners
-function setupEventListeners() {
-    // Export button
-    document.getElementById('exportData').addEventListener('click', exportDashboardData);
-    
-    // Refresh button
-    document.getElementById('refreshData').addEventListener('click', refreshDashboard);
-    
-    // Reset votes button
-    document.getElementById('resetVotes').addEventListener('click', confirmResetVotes);
-    
-    // Logout button
-    document.getElementById('logoutAdmin').addEventListener('click', logoutAdmin);
-    
-    // Filter changes
-    document.getElementById('timeFilter').addEventListener('change', () => {
-        currentPage = 1;
-        loadRecentActivity(currentPage);
-    });
-    
-    document.getElementById('categoryFilter').addEventListener('change', () => {
-        currentPage = 1;
-        loadRecentActivity(currentPage);
-    });
-}
-
-// Update welcome message
-function updateWelcomeMessage() {
-    const username = 'Administrator';
-    const time = new Date().getHours();
-    let greeting;
-    
-    if (time < 12) greeting = 'Good morning';
-    else if (time < 18) greeting = 'Good afternoon';
-    else greeting = 'Good evening';
-    
-    const welcomeElement = document.getElementById('adminWelcome');
-    if (welcomeElement) {
-        welcomeElement.innerHTML = `<i class="fas fa-user-shield"></i> ${greeting}, ${username}`;
-    }
-}
-
-// Switch result tabs
-function switchResultTab(tab) {
-    // Update tab buttons
-    document.querySelectorAll('.tab-btn').forEach(btn => {
-        btn.classList.remove('active');
-    });
-    event.target.classList.add('active');
-    
-    // Update content
-    document.querySelectorAll('.result-tab').forEach(content => {
-        content.classList.remove('active');
-    });
-    document.getElementById(`${tab}Results`).classList.add('active');
-}
-
-// Update chart type
-function updateChartType() {
-    const type = document.getElementById('chartTypeSelect').value;
-    voteChart.config.type = type;
-    voteChart.update();
-}
-
-// Update pie chart type
-function updatePieChart() {
-    const type = document.getElementById('pieTypeSelect').value;
-    categoryChart.config.type = type;
-    categoryChart.update();
-}
-
-// Filter activity
-function filterActivity() {
-    currentPage = 1;
-    loadRecentActivity(currentPage);
-}
-
-// Update pagination
-function updatePagination(current, total) {
-    document.getElementById('pageInfo').textContent = `Page ${current} of ${total}`;
-    
-    const prevBtn = document.getElementById('prevPage');
-    const nextBtn = document.getElementById('nextPage');
-    
-    prevBtn.disabled = current === 1;
-    nextBtn.disabled = current === total;
-}
-
-// Change page
-function changePage(direction) {
-    currentPage += direction;
-    loadRecentActivity(currentPage);
-}
-
-// Export activity log
-function exportActivity() {
-    const data = [
-        ['Time', 'User', 'Category', 'Vote', 'IP Address', 'Status'],
-        ['2 minutes ago', 'anime_lover_42', 'Best Anime', 'Attack on Titan', '192.168.1.1', 'success'],
-        ['5 minutes ago', 'weeb_king', 'Best Studio', 'MAPPA', '10.0.0.5', 'success'],
-        // Add more data as needed
-    ];
-    
-    const csv = data.map(row => row.join(',')).join('\n');
-    const blob = new Blob([csv], { type: 'text/csv' });
-    const url = window.URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `activity-log-${new Date().toISOString().split('T')[0]}.csv`;
-    a.click();
-    
-    showNotification('Activity log exported successfully', 'success');
-}
-
-// Export dashboard data
-function exportDashboardData() {
-    const data = {
-        exportDate: new Date().toISOString(),
-        dashboardStats: adminData,
-        // Add more data as needed
-    };
-    
-    const json = JSON.stringify(data, null, 2);
-    const blob = new Blob([json], { type: 'application/json' });
-    const url = window.URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `dashboard-export-${new Date().toISOString().split('T')[0]}.json`;
-    a.click();
-    
-    showNotification('Dashboard data exported successfully', 'success');
-}
-
-// Refresh dashboard
-async function refreshDashboard() {
-    showLoading(true);
-    
-    try {
-        await Promise.all([
-            loadDashboardData(),
-            loadVotingResults(),
-            loadRecentActivity(currentPage),
-            loadSystemInfo()
-        ]);
         
-        voteChart.update();
-        categoryChart.update();
+        <!-- Charts -->
+        <h2 class="section-title"><i class="fas fa-chart-bar"></i> Analytics</h2>
+        <div class="charts-container">
+            <div class="chart-card">
+                <div class="chart-header">
+                    <h3>Vote Distribution</h3>
+                    <div class="chart-actions">
+                        <button title="Download">
+                            <i class="fas fa-download"></i>
+                        </button>
+                        <button title="Refresh">
+                            <i class="fas fa-sync-alt"></i>
+                        </button>
+                    </div>
+                </div>
+                <canvas id="voteChart" height="250"></canvas>
+            </div>
+            
+            <div class="chart-card">
+                <div class="chart-header">
+                    <h3>Category Comparison</h3>
+                    <div class="chart-actions">
+                        <select id="chartType">
+                            <option value="pie">Pie Chart</option>
+                            <option value="doughnut">Doughnut</option>
+                            <option value="bar">Bar Chart</option>
+                        </select>
+                    </div>
+                </div>
+                <canvas id="categoryChart" height="250"></canvas>
+            </div>
+        </div>
         
-        showNotification('Dashboard refreshed successfully', 'success');
-    } catch (error) {
-        showNotification('Failed to refresh dashboard', 'error');
-    } finally {
-        showLoading(false);
-    }
-}
-
-// Confirm reset votes
-function confirmResetVotes() {
-    if (confirm('⚠️ WARNING: This will delete ALL voting data!\n\nThis action cannot be undone. Are you absolutely sure?')) {
-        resetVotes();
-    }
-}
-
-// Reset votes (simulated)
-function resetVotes() {
-    showLoading(true);
-    
-    // Simulate API call
-    setTimeout(() => {
-        // Reset all data
-        adminData = {
-            totalVotes: 0,
-            uniqueVoters: 0,
-            averageVotes: 0,
-            votesToday: 0,
-            voteTrend: '0%',
-            voterTrend: 0,
-            avgTrend: '0%',
-            activityTrend: 0
-        };
+        <!-- User Management -->
+        <h2 class="section-title"><i class="fas fa-users"></i> User Management</h2>
+        <div id="userManagementSection">
+            <!-- User management content will be loaded here -->
+        </div>
         
-        // Update UI
-        loadDashboardData();
-        loadVotingResults();
-        voteChart.update();
-        categoryChart.update();
+        <!-- Design & Theme -->
+        <h2 class="section-title"><i class="fas fa-palette"></i> Design & Theme</h2>
+        <div id="designSettingsSection">
+            <!-- Design settings will be loaded here -->
+        </div>
         
-        showLoading(false);
-        showNotification('All votes have been reset successfully', 'success');
-    }, 1000);
-}
-
-// Logout admin
-function logoutAdmin() {
-    localStorage.removeItem('adminToken');
-    localStorage.removeItem('adminTokenExpiry');
-    redirectToLogin();
-}
-
-// Show backup modal
-function showBackupModal() {
-    document.getElementById('backupModal').style.display = 'flex';
-}
-
-// Hide backup modal
-function hideBackupModal() {
-    document.getElementById('backupModal').style.display = 'none';
-}
-
-// Perform backup
-function performBackup() {
-    showLoading(true);
-    
-    // Simulate backup process
-    setTimeout(() => {
-        showLoading(false);
-        hideBackupModal();
-        showNotification('Database backup created successfully', 'success');
-    }, 2000);
-}
-
-// Clear cache
-function clearCache() {
-    if (confirm('Clear all cached data?')) {
-        localStorage.clear();
-        sessionStorage.clear();
-        showNotification('Cache cleared successfully', 'success');
+        <!-- System Settings -->
+        <h2 class="section-title"><i class="fas fa-cog"></i> System Settings</h2>
+        <div id="systemSettingsSection">
+            <!-- System settings will be loaded here -->
+        </div>
         
-        // Reload page
-        setTimeout(() => {
-            location.reload();
-        }, 1000);
-    }
-}
+        <!-- Voting Results -->
+        <h2 class="section-title"><i class="fas fa-poll"></i> Voting Results</h2>
+        <div class="voting-results">
+            <div class="results-tabs">
+                <button class="tab-btn active" onclick="switchResultTab('anime')">Best Anime</button>
+                <button class="tab-btn" onclick="switchResultTab('studio')">Best Studio</button>
+                <button class="tab-btn" onclick="switchResultTab('actor')">Best Actor</button>
+                <button class="tab-btn" onclick="switchResultTab('anticipated')">Most Anticipated</button>
+            </div>
+            
+            <div class="results-content">
+                <!-- Results will be loaded here -->
+                <div id="animeResults" class="result-tab active">
+                    <div class="results-list">
+                        <!-- Anime results -->
+                    </div>
+                </div>
+                <div id="studioResults" class="result-tab">
+                    <div class="results-list">
+                        <!-- Studio results -->
+                    </div>
+                </div>
+                <div id="actorResults" class="result-tab">
+                    <div class="results-list">
+                        <!-- Actor results -->
+                    </div>
+                </div>
+                <div id="anticipatedResults" class="result-tab">
+                    <div class="results-list">
+                        <!-- Anticipated results -->
+                    </div>
+                </div>
+            </div>
+        </div>
+        
+        <!-- Recent Activity -->
+        <h2 class="section-title"><i class="fas fa-history"></i> Recent Activity</h2>
+        <div class="recent-activity">
+            <div class="activity-filters">
+                <select id="timeFilter">
+                    <option value="1">Last hour</option>
+                    <option value="24" selected>Last 24 hours</option>
+                    <option value="168">Last week</option>
+                    <option value="720">Last month</option>
+                </select>
+                <select id="categoryFilter">
+                    <option value="all">All Categories</option>
+                    <option value="vote">Votes</option>
+                    <option value="user">User Activity</option>
+                    <option value="system">System</option>
+                </select>
+            </div>
+            
+            <table class="activity-table">
+                <thead>
+                    <tr>
+                        <th>Time</th>
+                        <th>User</th>
+                        <th>Action</th>
+                        <th>Details</th>
+                        <th>IP Address</th>
+                        <th>Status</th>
+                    </tr>
+                </thead>
+                <tbody id="activityTable">
+                    <!-- Activity rows will be loaded here -->
+                </tbody>
+            </table>
+            
+            <div class="pagination">
+                <button id="prevPage" onclick="changePage(-1)">Previous</button>
+                <span id="pageInfo">Page 1 of 1</span>
+                <button id="nextPage" onclick="changePage(1)">Next</button>
+            </div>
+        </div>
+    </main>
 
-// Show loading overlay
-function showLoading(show) {
-    const overlay = document.getElementById('loadingOverlay');
-    overlay.style.display = show ? 'flex' : 'none';
-}
+    <!-- Loading Overlay -->
+    <div id="loadingOverlay" class="loading-overlay">
+        <div class="loading-spinner">
+            <div class="spinner"></div>
+            <p>Loading...</p>
+        </div>
+    </div>
 
-// Show notification
-function showNotification(message, type = 'info') {
-    // Create notification element
-    const notification = document.createElement('div');
-    notification.className = `notification ${type}`;
-    notification.textContent = message;
-    notification.style.cssText = `
-        position: fixed;
-        top: 20px;
-        right: 20px;
-        padding: 15px 25px;
-        background: ${type === 'success' ? '#10b981' : type === 'error' ? '#ef4444' : '#6366f1'};
-        color: white;
-        border-radius: 8px;
-        box-shadow: 0 10px 25px rgba(0,0,0,0.1);
-        z-index: 4000;
-        animation: slideIn 0.3s ease;
-        display: flex;
-        align-items: center;
-        gap: 10px;
-        max-width: 400px;
-    `;
-    
-    // Add icon
-    const icon = type === 'success' ? '✓' : type === 'error' ? '✗' : 'ℹ';
-    notification.innerHTML = `<span style="font-weight: bold;">${icon}</span> ${message}`;
-    
-    document.body.appendChild(notification);
-    
-    // Remove after 3 seconds
-    setTimeout(() => {
-        notification.style.animation = 'slideOut 0.3s ease';
-        setTimeout(() => {
-            document.body.removeChild(notification);
-        }, 300);
-    }, 3000);
-}
+    <!-- Notification Container -->
+    <div id="notificationContainer"></div>
 
-// Start auto-refresh
-function startAutoRefresh() {
-    // Refresh every 5 minutes
-    setInterval(() => {
-        if (document.visibilityState === 'visible') {
-            loadDashboardData();
-            loadRecentActivity(currentPage);
-        }
-    }, 5 * 60 * 1000);
-}
-
-// Add CSS animations for notifications
-const style = document.createElement('style');
-style.textContent = `
-    @keyframes slideIn {
-        from {
-            transform: translateX(100%);
-            opacity: 0;
-        }
-        to {
-            transform: translateX(0);
-            opacity: 1;
-        }
-    }
-    
-    @keyframes slideOut {
-        from {
-            transform: translateX(0);
-            opacity: 1;
-        }
-        to {
-            transform: translateX(100%);
-            opacity: 0;
-        }
-    }
-`;
-document.head.appendChild(style);
-
-// Initialize admin dashboard when page loads
-window.onload = initAdmin;
+    <script src="/js/admin-fixed.js"></script>
+    <script>
+        // Set current time
+        const now = new Date();
+        document.getElementById('currentTime').textContent = 
+            now.toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'});
+        
+        // Logout function
+        document.getElementById('logoutAdmin').addEventListener('click', function() {
+            localStorage.removeItem('adminToken');
+            localStorage.removeItem('adminTokenExpiry');
+            window.location.href = 'login.html';
+        });
+    </script>
+</body>
+</html>
+[file content end]
