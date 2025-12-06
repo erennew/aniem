@@ -1,31 +1,32 @@
 // Global variables
-let userVotes = {};
+let userVotes = {
+    'Best Anime of 2025': null,
+    'Best Animation Studio': null,
+    'Best Voice Actor of 2025': null,
+    'Most Anticipated Anime of 2025': null
+};
 let currentVote = null;
 let userName = null;
 
 // Initialize the application
 async function initApp() {
     try {
-        // Remove login requirement - users can vote without login
-        hideAuthModal();
+        // Generate guest username
+        generateGuestName();
         
-        // Load user votes from localStorage
-        loadUserVotes();
+        // Show user panel
+        showUserPanel();
         
         // Check voting status for each category
         await checkAllVotingStatus();
         
-        // Load categories from server
-        await loadCategories();
-        
-        // Load nominees from server
-        await loadNominees();
-        
         // Update progress
         updateProgress();
         
-        // Show user panel (no login required)
-        showUserPanel();
+        // Load live results
+        await loadLiveResults();
+        
+        console.log('App initialized successfully');
         
     } catch (error) {
         console.error('Error initializing app:', error);
@@ -33,18 +34,27 @@ async function initApp() {
     }
 }
 
-// Hide auth modal (no login required)
-function hideAuthModal() {
-    const authModal = document.getElementById('authModal');
-    if (authModal) {
-        authModal.style.display = 'none';
+// Generate guest username
+function generateGuestName() {
+    if (!userName) {
+        const adjectives = ['Anime', 'Otaku', 'Weeb', 'Manga', 'Kawaii', 'Senpai'];
+        const nouns = ['Lover', 'Fan', 'Master', 'Warrior', 'Ninja', 'Explorer'];
+        const randomAdj = adjectives[Math.floor(Math.random() * adjectives.length)];
+        const randomNoun = nouns[Math.floor(Math.random() * nouns.length)];
+        userName = `${randomAdj}${randomNoun}${Math.floor(Math.random() * 999)}`;
+        
+        // Display username
+        const usernameDisplay = document.getElementById('usernameDisplay');
+        if (usernameDisplay) {
+            usernameDisplay.textContent = `Guest: ${userName}`;
+        }
+        
+        // Store in localStorage
+        localStorage.setItem('userName', userName);
     }
-    
-    // Show user info panel
-    showUserPanel();
 }
 
-// Show user panel (no login required)
+// Show user panel
 function showUserPanel() {
     const userPanel = document.getElementById('userPanel');
     const userInfo = document.getElementById('userInfo');
@@ -55,61 +65,12 @@ function showUserPanel() {
     
     if (userInfo) {
         userInfo.style.display = 'flex';
-        
-        // Generate random username if not exists
-        if (!userName) {
-            const adjectives = ['Anime', 'Otaku', 'Weeb', 'Manga', 'Kawaii', 'Senpai', 'Kitsune'];
-            const nouns = ['Lover', 'Fan', 'Master', 'Warrior', 'Ninja', 'Samurai', 'Knight'];
-            const randomAdj = adjectives[Math.floor(Math.random() * adjectives.length)];
-            const randomNoun = nouns[Math.floor(Math.random() * nouns.length)];
-            userName = `${randomAdj}${randomNoun}${Math.floor(Math.random() * 1000)}`;
-            
-            // Store in localStorage
-            localStorage.setItem('userName', userName);
-        } else {
-            userName = localStorage.getItem('userName');
-        }
-        
-        document.getElementById('usernameDisplay').textContent = `Hello, ${userName}!`;
-    }
-}
-
-// Load categories from server
-async function loadCategories() {
-    try {
-        const response = await fetch('/api/categories');
-        if (!response.ok) throw new Error('Failed to load categories');
-        const categories = await response.json();
-        
-        // Update categories if needed
-        console.log('Loaded categories:', categories);
-    } catch (error) {
-        console.error('Error loading categories:', error);
-    }
-}
-
-// Load nominees from server
-async function loadNominees() {
-    try {
-        const response = await fetch('/api/nominees');
-        if (!response.ok) throw new Error('Failed to load nominees');
-        const nominees = await response.json();
-        
-        // Update nominees if needed
-        console.log('Loaded nominees:', nominees);
-    } catch (error) {
-        console.error('Error loading nominees:', error);
     }
 }
 
 // Check voting status for all categories
 async function checkAllVotingStatus() {
-    const categories = [
-        'Best Anime of 2025',
-        'Best Animation Studio',
-        'Best Voice Actor of 2025',
-        'Most Anticipated Anime of 2025'
-    ];
+    const categories = Object.keys(userVotes);
     
     for (const category of categories) {
         await checkVotingStatus(category);
@@ -152,14 +113,18 @@ function vote(selection, category) {
     const modal = document.getElementById('confirmModal');
     const message = document.getElementById('confirmMessage');
     
-    message.textContent = `Are you sure you want to vote for "${selection}" in "${category}"?`;
-    modal.style.display = 'flex';
+    if (modal && message) {
+        message.textContent = `Are you sure you want to vote for "${selection}" in "${category}"?`;
+        modal.style.display = 'flex';
+    }
 }
 
 // Confirm vote
 async function confirmVote(confirmed) {
     const modal = document.getElementById('confirmModal');
-    modal.style.display = 'none';
+    if (modal) {
+        modal.style.display = 'none';
+    }
     
     if (!confirmed || !currentVote) return;
     
@@ -185,12 +150,10 @@ async function confirmVote(confirmed) {
             // Update UI
             updateCategoryStatus(currentVote.category, currentVote.selection);
             updateProgress();
+            await loadLiveResults();
             
             // Show success message
             showToast(`Successfully voted for ${currentVote.selection}!`, 'success');
-            
-            // Save to localStorage
-            saveUserVotes();
             
         } else {
             // Show error
@@ -229,7 +192,7 @@ function updateCategoryStatus(category, selection) {
         const voteButtons = categoryElement.querySelectorAll('.vote-btn');
         voteButtons.forEach(btn => {
             btn.disabled = true;
-            btn.textContent = 'Already Voted';
+            btn.innerHTML = '<i class="fas fa-check-circle"></i> Already Voted';
             btn.classList.add('disabled');
         });
     }
@@ -276,113 +239,6 @@ function updateProgress() {
     updateTotalVotes();
 }
 
-// Load user votes from localStorage
-function loadUserVotes() {
-    const savedVotes = localStorage.getItem('userVotes');
-    if (savedVotes) {
-        try {
-            userVotes = JSON.parse(savedVotes);
-            
-            // Update UI for already voted categories
-            Object.keys(userVotes).forEach(category => {
-                if (userVotes[category]) {
-                    updateCategoryStatus(category, userVotes[category]);
-                }
-            });
-        } catch (error) {
-            console.error('Error loading user votes:', error);
-        }
-    } else {
-        // Initialize empty votes
-        userVotes = {
-            'Best Anime of 2025': null,
-            'Best Animation Studio': null,
-            'Best Voice Actor of 2025': null,
-            'Most Anticipated Anime of 2025': null
-        };
-    }
-}
-
-// Save user votes to localStorage
-function saveUserVotes() {
-    try {
-        localStorage.setItem('userVotes', JSON.stringify(userVotes));
-    } catch (error) {
-        console.error('Error saving user votes:', error);
-    }
-}
-
-// Show my voting results
-async function showMyResults() {
-    const resultsContainer = document.getElementById('myResults');
-    if (!resultsContainer) return;
-    
-    resultsContainer.innerHTML = '';
-    
-    // Get global results
-    try {
-        const response = await fetch('/api/results');
-        if (!response.ok) throw new Error('Failed to load results');
-        const globalResults = await response.json();
-        
-        // Create results display
-        Object.keys(userVotes).forEach(category => {
-            const selection = userVotes[category];
-            if (!selection) return;
-            
-            const categoryResults = globalResults[category] || [];
-            const userVoteResult = categoryResults.find(r => r.name === selection);
-            
-            const resultCard = document.createElement('div');
-            resultCard.className = 'result-card';
-            
-            resultCard.innerHTML = `
-                <h4>${category}</h4>
-                <div class="result-selection">
-                    <strong>Your Vote:</strong> ${selection}
-                </div>
-                <div class="result-stats">
-                    <span class="result-votes">
-                        <i class="fas fa-chart-bar"></i> 
-                        Votes: ${userVoteResult ? userVoteResult.votes : 'N/A'}
-                    </span>
-                    <span class="result-rank">
-                        <i class="fas fa-trophy"></i>
-                        Rank: ${getRank(categoryResults, selection)}
-                    </span>
-                </div>
-            `;
-            
-            resultsContainer.appendChild(resultCard);
-        });
-        
-        if (resultsContainer.children.length === 0) {
-            resultsContainer.innerHTML = '<p class="no-results">You haven\'t voted in any categories yet!</p>';
-        }
-        
-        // Scroll to results section
-        document.getElementById('results').scrollIntoView({ behavior: 'smooth' });
-        
-    } catch (error) {
-        console.error('Error loading results:', error);
-        resultsContainer.innerHTML = '<p class="error">Failed to load results. Please try again.</p>';
-    }
-}
-
-// Get rank of a selection in results
-function getRank(results, selection) {
-    if (!results || results.length === 0) return 'N/A';
-    
-    const sortedResults = [...results].sort((a, b) => b.votes - a.votes);
-    const rank = sortedResults.findIndex(r => r.name === selection);
-    
-    if (rank === -1) return 'N/A';
-    if (rank === 0) return '1st 🥇';
-    if (rank === 1) return '2nd 🥈';
-    if (rank === 2) return '3rd 🥉';
-    return `${rank + 1}th`;
-}
-
 // Update total votes count
 async function updateTotalVotes() {
     try {
@@ -406,42 +262,82 @@ async function updateTotalVotes() {
     }
 }
 
-// Show toast notification
-function showToast(message, type = 'info') {
-    const toast = document.getElementById('toast');
-    if (!toast) return;
+// Load live results
+async function loadLiveResults() {
+    const resultsContainer = document.getElementById('myResults');
+    if (!resultsContainer) return;
     
-    toast.textContent = message;
-    toast.className = `toast ${type}`;
-    toast.style.display = 'block';
-    
-    setTimeout(() => {
-        toast.style.display = 'none';
-    }, 3000);
-}
-
-// Tab switching for auth modal (kept for consistency, though modal is hidden)
-function switchTab(tabName) {
-    const loginTab = document.getElementById('loginTab');
-    const registerTab = document.getElementById('registerTab');
-    const loginBtn = document.querySelector('.tab-btn[onclick="switchTab(\'login\')"]');
-    const registerBtn = document.querySelector('.tab-btn[onclick="switchTab(\'register\')"]');
-    
-    if (tabName === 'login') {
-        loginTab.style.display = 'block';
-        registerTab.style.display = 'none';
-        loginBtn.classList.add('active');
-        registerBtn.classList.remove('active');
-    } else {
-        loginTab.style.display = 'none';
-        registerTab.style.display = 'block';
-        loginBtn.classList.remove('active');
-        registerBtn.classList.add('active');
+    try {
+        const response = await fetch('/api/results');
+        if (!response.ok) throw new Error('Failed to load results');
+        const results = await response.json();
+        
+        resultsContainer.innerHTML = '';
+        
+        // Create results display for each category
+        Object.keys(results).forEach(category => {
+            const categoryResults = results[category];
+            if (!categoryResults || categoryResults.length === 0) return;
+            
+            const resultCard = document.createElement('div');
+            resultCard.className = 'result-card';
+            
+            // Find top 3 results
+            const topResults = categoryResults.slice(0, 3);
+            
+            let resultsHTML = `
+                <h4>${category}</h4>
+                <div class="results-list">
+            `;
+            
+            topResults.forEach((result, index) => {
+                const medal = index === 0 ? '🥇' : index === 1 ? '🥈' : '🥉';
+                const isUserVote = userVotes[category] === result.name;
+                
+                resultsHTML += `
+                    <div class="result-item ${isUserVote ? 'user-vote' : ''}">
+                        <span class="rank">${medal}</span>
+                        <span class="name">${result.name}</span>
+                        <span class="votes">${result.votes} votes</span>
+                        ${isUserVote ? '<span class="your-vote">Your Vote</span>' : ''}
+                    </div>
+                `;
+            });
+            
+            resultsHTML += '</div>';
+            resultCard.innerHTML = resultsHTML;
+            resultsContainer.appendChild(resultCard);
+        });
+        
+        if (resultsContainer.children.length === 0) {
+            resultsContainer.innerHTML = '<p class="no-results">No votes yet. Be the first to vote!</p>';
+        }
+        
+    } catch (error) {
+        console.error('Error loading results:', error);
+        resultsContainer.innerHTML = '<p class="error">Failed to load results. Please try again.</p>';
     }
 }
 
-// Login function (kept for admin link)
-async function login() {
+// Show voting results
+function showMyResults() {
+    const resultsSection = document.getElementById('results');
+    if (resultsSection) {
+        resultsSection.scrollIntoView({ behavior: 'smooth' });
+        loadLiveResults();
+    }
+}
+
+// Refresh votes
+function refreshVotes() {
+    checkAllVotingStatus();
+    updateProgress();
+    loadLiveResults();
+    showToast('Votes refreshed!', 'info');
+}
+
+// Admin login
+async function adminLogin() {
     const username = document.getElementById('loginUsername').value.trim();
     const password = document.getElementById('loginPassword').value;
     const errorElement = document.getElementById('loginError');
@@ -454,84 +350,7 @@ async function login() {
     }
     
     try {
-        // For admin login
-        if (username === 'admin') {
-            const response = await fetch('/api/admin/login', {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                },
-                body: JSON.stringify({ username, password })
-            });
-            
-            const data = await response.json();
-            
-            if (data.success) {
-                // Store admin token
-                localStorage.setItem('adminToken', data.token);
-                localStorage.setItem('adminUser', JSON.stringify(data.user));
-                
-                // Show admin link
-                const adminLink = document.getElementById('adminLink');
-                if (adminLink) {
-                    adminLink.style.display = 'block';
-                }
-                
-                showToast('Admin login successful!', 'success');
-                hideAuthModal();
-            } else {
-                errorElement.textContent = data.error || 'Login failed';
-            }
-        } else {
-            // For regular user login (if needed)
-            const response = await fetch('/api/login', {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                },
-                body: JSON.stringify({ username, password })
-            });
-            
-            if (!response.ok) {
-                const error = await response.json();
-                throw new Error(error.error || 'Login failed');
-            }
-            
-            const data = await response.json();
-            localStorage.setItem('userToken', data.token);
-            localStorage.setItem('userData', JSON.stringify(data.user));
-            
-            userName = data.user.username;
-            showUserPanel();
-            hideAuthModal();
-            showToast('Welcome back!', 'success');
-        }
-    } catch (error) {
-        errorElement.textContent = error.message;
-        console.error('Login error:', error);
-    }
-}
-
-// Register function (kept for consistency)
-async function register() {
-    const username = document.getElementById('registerUsername').value.trim();
-    const password = document.getElementById('registerPassword').value;
-    const errorElement = document.getElementById('registerError');
-    
-    errorElement.textContent = '';
-    
-    if (!username || !password) {
-        errorElement.textContent = 'Please enter username and password';
-        return;
-    }
-    
-    if (password.length < 6) {
-        errorElement.textContent = 'Password must be at least 6 characters';
-        return;
-    }
-    
-    try {
-        const response = await fetch('/api/register', {
+        const response = await fetch('/api/admin/login', {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json',
@@ -539,30 +358,61 @@ async function register() {
             body: JSON.stringify({ username, password })
         });
         
-        if (!response.ok) {
-            const error = await response.json();
-            throw new Error(error.error || 'Registration failed');
+        const data = await response.json();
+        
+        if (data.success) {
+            // Store admin token
+            localStorage.setItem('adminToken', data.token);
+            localStorage.setItem('adminUser', JSON.stringify(data.user));
+            
+            // Show admin link
+            const adminLink = document.getElementById('adminLink');
+            if (adminLink) {
+                adminLink.style.display = 'block';
+            }
+            
+            showToast('Admin login successful!', 'success');
+            hideAuthModal();
+            
+            // Redirect to admin page after 1 second
+            setTimeout(() => {
+                window.location.href = 'admin.html';
+            }, 1000);
+        } else {
+            errorElement.textContent = data.error || 'Login failed';
         }
-        
-        showToast('Registration successful! You can now login.', 'success');
-        switchTab('login');
-        document.getElementById('loginUsername').value = username;
-        document.getElementById('registerUsername').value = '';
-        document.getElementById('registerPassword').value = '';
-        
     } catch (error) {
-        errorElement.textContent = error.message;
-        console.error('Registration error:', error);
+        errorElement.textContent = 'Network error. Please try again.';
+        console.error('Admin login error:', error);
     }
 }
 
-// Logout function
-function logout() {
-    // Clear all local storage
-    localStorage.clear();
+// Hide auth modal
+function hideAuthModal() {
+    const authModal = document.getElementById('authModal');
+    if (authModal) {
+        authModal.style.display = 'none';
+    }
+}
+
+// Continue as guest
+function continueAsGuest() {
+    hideAuthModal();
+    showToast('Welcome! You can vote without registration.', 'success');
+}
+
+// Show toast notification
+function showToast(message, type = 'info') {
+    const toast = document.getElementById('toast');
+    if (!toast) return;
     
-    // Reload the page
-    location.reload();
+    toast.textContent = message;
+    toast.className = `toast ${type}`;
+    toast.style.display = 'block';
+    
+    setTimeout(() => {
+        toast.style.display = 'none';
+    }, 3000);
 }
 
 // Check if user is admin
@@ -583,14 +433,45 @@ document.addEventListener('DOMContentLoaded', function() {
     initApp();
     checkAdminStatus();
     
-    // Close modal when clicking outside
-    const modal = document.getElementById('confirmModal');
+    // Close modals when clicking outside
+    const confirmModal = document.getElementById('confirmModal');
+    const authModal = document.getElementById('authModal');
+    
     window.onclick = function(event) {
-        if (event.target === modal) {
-            modal.style.display = 'none';
+        if (event.target === confirmModal) {
+            confirmModal.style.display = 'none';
+        }
+        if (event.target === authModal) {
+            hideAuthModal();
         }
     };
     
-    // Check for existing votes every 30 seconds
-    setInterval(checkAllVotingStatus, 30000);
+    // Auto-refresh results every 30 seconds
+    setInterval(loadLiveResults, 30000);
+    
+    // Setup admin login button
+    const adminLoginBtn = document.getElementById('adminLoginBtn');
+    if (adminLoginBtn) {
+        adminLoginBtn.addEventListener('click', function() {
+            if (authModal) {
+                authModal.style.display = 'flex';
+            }
+        });
+    }
+    
+    // Setup admin login form
+    const adminLoginButton = document.getElementById('adminLoginButton');
+    if (adminLoginButton) {
+        adminLoginButton.addEventListener('click', adminLogin);
+    }
+    
+    // Allow Enter key in admin login form
+    const loginPassword = document.getElementById('loginPassword');
+    if (loginPassword) {
+        loginPassword.addEventListener('keypress', function(e) {
+            if (e.key === 'Enter') {
+                adminLogin();
+            }
+        });
+    }
 });
