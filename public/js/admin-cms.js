@@ -1,4 +1,5 @@
 // Anime Voting CMS - Complete Content Management System
+const API_BASE_URL = window.location.origin;
 class AnimeVotingCMS {
     constructor() {
         this.currentSection = 'dashboard';
@@ -1152,4 +1153,5 @@ window.onload = () => {
 };
 
 // Make cms methods available globally
+
 window.cms = cms;
