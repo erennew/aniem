@@ -10,31 +10,6 @@
 </head>
 <body>
 
-    <!-- Login/Register Modal -->
-    <div id="authModal" class="auth-modal">
-        <div class="auth-content">
-            <h2><i class="fas fa-user"></i> Welcome to Anime Voting 2025</h2>
-            <div class="auth-tabs">
-                <button class="tab-btn active" onclick="switchTab('login')">Login</button>
-                <button class="tab-btn" onclick="switchTab('register')">Register</button>
-            </div>
-            
-            <div id="loginTab" class="auth-tab">
-                <input type="text" id="loginUsername" placeholder="Username" required>
-                <input type="password" id="loginPassword" placeholder="Password" required>
-                <button onclick="login()" class="auth-btn"><i class="fas fa-sign-in-alt"></i> Login</button>
-                <p id="loginError" class="error-message"></p>
-            </div>
-            
-            <div id="registerTab" class="auth-tab" style="display: none;">
-                <input type="text" id="registerUsername" placeholder="Choose Username" required>
-                <input type="password" id="registerPassword" placeholder="Choose Password" required>
-                <button onclick="register()" class="auth-btn"><i class="fas fa-user-plus"></i> Register</button>
-                <p id="registerError" class="error-message"></p>
-            </div>
-        </div>
-    </div>
-
     <!-- Header Section -->
     <header class="header">
         <div class="header-container">
